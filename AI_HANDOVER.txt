@@ -1,0 +1,369 @@
+JKAY RACKS — INVENTORY & FABRICATION TOOL
+AI-to-AI handover notes
+Last updated: 20 Sept 2026
+
+============================================================
+1. WHAT THIS IS
+============================================================
+An internal, real (not mocked) production stock-tracking tool for JKAY
+Racks Metal Sheet Works, a custom metal rack manufacturer. Fewer than 10
+people will ever use it. Built once, meant to run for years — so it's a
+real backend with a real database, not a prototype.
+
+Two stock locations, modeled as the same kind of thing under different
+names (neither has special powers the other lacks):
+  - Fabrication — holds raw material stock.
+  - Finished    — holds finished/built goods ready for dispatch.
+
+Plus an Admin role with a cross-location overview, pricing/valuation
+visibility, and ownership of the item catalog.
+
+The ENTIRE stock-movement mechanism is two actions:
+  - Input DC  (Delivery Challan) — material arriving at a location,
+    from a supplier or from the other location's Output DC. Increases
+    stock at that location.
+  - Output DC — material leaving a location, to the other location
+    (what used to be called a "transfer") or to an outside customer
+    (what used to be called a "sale"). Decreases stock at that location,
+    blocked if it would exceed what's on hand.
+There is no separate transfer action, sale action, or usage-logging
+action. An Output DC on one side and the matching Input DC on the
+receiving side are logged as two INDEPENDENT rows (mirrors how a real
+paper delivery challan works — sender issues it, receiver logs it on
+arrival when it's physically received; quantities are allowed to differ
+in practice). This was an open assumption in the original spec and has
+not been explicitly re-confirmed by the client as of this writing — flag
+it if that matters to whatever you're building next.
+
+Items live in a single ADMIN-OWNED TREE (not per-location, not
+per-something-else) — e.g. "Steel Sheets" -> "Rolled" / "Unrolled", to
+any depth. Only the bottom-most items (leaves) hold real quantity or
+price; a parent's number is always the sum of its leaves, computed on
+the fly, never stored. Materials and consumables live in the same tree
+mechanically but are kept in separate tabs in the UI (a `kind` field,
+`material` or `consumable`, and a subtree cannot mix the two).
+
+Pricing is UNIVERSAL, not per-transaction: one price per item, set only
+by Admin, used for every valuation. Fabrication and Finished operators
+never see a price or a rupee figure anywhere — enforced server-side, not
+just hidden in the UI.
+
+============================================================
+2. ARCHITECTURE
+============================================================
+  Browser --HTTPS--> Railway (single Express app: API + static frontend)
+                          |
+                          +--service-role key--> Supabase Postgres (schema: inventory)
+
+- Database + Auth: Supabase (Postgres + Auth only — NOT using Supabase's
+  auto-REST layer or row-level security; the Express app is the only
+  thing that talks to Postgres, using the Supabase service-role key
+  server-side only).
+- Backend + frontend: ONE Railway service. A single Node/Express app
+  serves the API and the static frontend files — one deploy, one URL,
+  one process. This was a deliberate choice given <10 users (see
+  decisions log below) — same-origin serving also removes a CORS attack
+  surface.
+- No GitHub repo required to deploy — `railway up` deploys the folder
+  directly.
+- Billing: one Supabase invoice + one Railway invoice, period (a
+  separate CRM project for the same client, currently paused, shares
+  each platform's billing account without needing to share a database or
+  process).
+
+============================================================
+3. TIMELINE (chronological, what happened and when)
+============================================================
+
+~5 Sept 2026 — Project origin & Round 1-3 requirements
+  Started from a photo of handwritten shop-floor notes: three stages
+  (Fabrication, Finished product, Admin), example items (Backsheet,
+  Plate, Arms) with quantities and value, a dated log entry (vehicle
+  number, driver "Ravi", quantities moved). Client asked for "a simple
+  SaaS tool" to digitize this. Explicitly a second, separate build for
+  the same client, prioritized AHEAD of an existing CRM project (CRM was
+  then explicitly shelved: "forget about crm for now" — do not resume
+  unless the client brings it up again).
+
+  Requirements evolved in rounds:
+    Round 1: 3 logins, one shared stock pool. Fabrication logs raw
+      material/consumables; Finished receives via an atomic hand-off and
+      sells against that stock; Admin oversees both, only role with
+      pricing.
+    Round 2: item catalog not fixed to specific materials — the
+      handwritten examples were just examples.
+    Round 3: (1) item TREE not flat list, unlimited depth, computed
+      rollups; (2) buffer stock — Fabrication can hold a finished batch
+      indefinitely rather than being forced to transfer immediately;
+      (3) direct sales from Fabrication, bypassing Finished.
+
+  Infra decision-making (still current, unaffected by later reworks):
+    - Initially scoped Supabase-as-full-backend for build speed.
+    - Client explicitly REJECTED free-tier/BaaS-shortcut thinking:
+      "this is a real project, going to be used for years to come, dont
+      think about free shit please, free is bound to run out, im
+      thinking railway with 2 separate services." Production-grade paid
+      infra from day one — not a soft preference.
+    - Landed on: Supabase = Postgres + Auth only. Railway = all compute.
+    - Client wants CRM (later) to share billing with this tool — solved
+      by keeping them as fully separate projects on each platform, which
+      still nets one consolidated invoice per provider (no forced
+      coupling of the two apps' databases/processes needed).
+    - <10 users ever -> combined frontend+backend into one Railway
+      service.
+
+~11 Sept 2026 — Round 4: a complete rework (CURRENT MODEL, supersedes
+  parts of Rounds 1 and 3)
+    1. Fabrication and Finished are the SAME kind of entity, different
+       names — not two roles with different powers. This reverses part
+       of Round 3: transfer and sale stop being distinct actions.
+    2. Universal pricing — one price per item, Admin-set, used
+       everywhere. No per-transaction/"load-wise" pricing.
+    3. Input DC / Output DC becomes the ENTIRE mechanism, replacing the
+       earlier intake/usage/transfer/sale action set.
+    4. The item tree becomes ADMIN-ONLY — reverses part of Round 3:
+       Fabrication no longer creates categories/items inline.
+    5. Consumables tracked the same way as materials, in a separate tab,
+       same tree/leaf/DC mechanics.
+    6. Admin nav specified concretely: homepage = Fabrication arrow +
+       Finished arrow + out-of-stock panel; drilling into either arrow
+       shows that location's material tree with price + a Consumables
+       tab.
+  Design brief for the mockups was written and handed to the client to
+  run through Claude Design (full brief text lives in
+  JKAY_Inventory_Build_Plan.md section 9 in the source-of-truth project
+  docs, summarized in section 6 below).
+
+18 Sept 2026 — First build pass + mockups delivered
+  - Schema locked and written, Express API scaffolded and route-complete
+    against the Round-4 model, smoke-tested locally (not against a real
+    Supabase project), delivered to the client as a ZIP file (schema +
+    Express app + provision-user.js + .env.example + README). THAT ZIP
+    IS NOT THE SAME FILE SET AS WHAT'S ON DISK NOW — see 20 Sept entry.
+  - Three HTML mockups uploaded by the client: "JKAY Racks - Admin.html",
+    "JKAY Racks - Fabrication Desk.html", "JKAY Racks - Finished
+    Desk.html" — matching the Round-4 design brief, populated with
+    realistic sample data, reviewed against the plan. IMPORTANT FORMAT
+    NOTE: these are "Bundled Page" exports — a manifest + template +
+    resource blobs unpacked client-side into a full DOM at load time,
+    NOT plain hand-editable HTML/CSS/JS. The markup uses a custom
+    component templating syntax (`sc-if`, `sc-for`, `sc-camel-on-click`,
+    `{{ }}` bindings) layered over inlined app logic. Treat them as a
+    LAYOUT/VISUAL REFERENCE to rebuild from, not as source to lightly
+    edit in place.
+
+20 Sept 2026 — Fresh session, rebuild from scratch, work moved onto the
+  client's own machine
+  - New session had no access to the 18 Sept zip's actual file contents
+    (only its description in project docs) and the target folder
+    (D:\allcsproject\jk  racks inventory, on the client's Windows
+    machine, linked via device bridge) was empty. Decisions made with
+    the client at this point:
+      (a) rebuild the backend FRESH from the locked spec rather than
+          waiting for the old zip to be re-uploaded;
+      (b) build everything LOCALLY first (no real Supabase/Railway
+          wiring yet) — client will hand over real credentials later;
+      (c) frontend will be rebuilt against the ORIGINAL REVIEWED MOCKUPS
+          (re-uploaded by the client), not built fresh from the design
+          brief alone, so it matches what was already approved.
+  - Backend rebuilt and written directly into
+    D:\allcsproject\jk  racks inventory on the client's machine (via the
+    linked-device file bridge — this session can read/write files there
+    directly). Smoke-tested: server boots, unauthenticated /api/* calls
+    401, static frontend route serves.
+  - Client then re-uploaded the three mockup files as v3.zip. Extracted,
+    confirmed as the same three "Bundled Page" exports described above.
+    NOT YET incorporated into the frontend build — that's the next step.
+  - This file was written in response to the client asking for a
+    timeline/context dump inside the codebase itself, so a different AI
+    picking this project up (in a different tool/session) has full
+    context without re-deriving it from chat history.
+
+============================================================
+4. CURRENT STATE OF THE CODE (as of 20 Sept 2026)
+============================================================
+Location: D:\allcsproject\jk  racks inventory  (on the client's own
+Windows machine — this project is NOT in this cloud session's own
+filesystem; it was written there directly via a device-bridge link)
+
+  db/schema.sql
+    - `inventory` Postgres schema (namespaced so it can share a Supabase
+      project safely with other apps).
+    - Tables: locations (seeded: Fabrication, Finished), items
+      (self-referencing tree, `kind` enum material/consumable, is_active
+      soft-archive), stock (item_id, location_id, qty), item_prices
+      (one row per leaf item), profiles (role operator/admin,
+      location_id set only for operator), dcs (header: dc_no, location,
+      direction in/out, party, vehicle_no, address, note), dc_lines
+      (item_id, item_name + qty + unit + price ALL SNAPSHOTTED at
+      creation so later renames/price changes never rewrite history),
+      alert_thresholds (per-item per-location low-stock threshold —
+      added this session, needed for the Fabrication/Finished "Alerts"
+      page the mockups reference).
+    - Triggers: item kind must match its parent's kind (no mixing
+      material/consumable in one subtree); stock/item_prices rows are
+      rejected if the item has active children (leaf-only enforcement).
+    - Functions: `next_dc_no()` (JK-YYYY-##### numbering),
+      `apply_dc_line()` (row-locks the stock row, applies one in/out
+      movement, raises on insufficient stock for an Output DC),
+      `record_dc()` — THE important one: takes a full DC (header +
+      jsonb array of {item_id, qty} lines) and creates the header, every
+      line (with price/name snapshot), and applies every stock change,
+      all as one function call, so Postgres gives it one implicit
+      transaction — either the whole DC succeeds or an insufficient-
+      stock error on any line rolls back everything, including lines
+      already processed earlier in the same call.
+
+  src/index.js
+    - Express app entry point. Mounts requireAuth on all of /api/*,
+      then /api/locations, /api/items, /api/dc, and the reports routes
+      (/api/out-of-stock, /api/low-stock, /api/valuation,
+      /api/inventory-books). Serves public/ as static files and falls
+      back to public/index.html for any non-/api route (SPA-style), per
+      the single-Railway-service decision.
+
+  src/lib/supabase.js
+    - The one place the Supabase service-role key is used
+      (createClient with that key). Never sent to the browser.
+
+  src/middleware/auth.js
+    - requireAuth: verifies the bearer token via supabase.auth.getUser,
+      loads the matching inventory.profiles row, attaches req.user =
+      {id, fullName, role, locationId}.
+    - requireAdmin: 403s if req.user.role !== 'admin'.
+    - resolveLocationId(req): admin can pass ?location=/body.location_id
+      to target any location; an OPERATOR'S REQUEST ALWAYS USES
+      req.user.locationId REGARDLESS OF WHAT THE CLIENT SENDS — this is
+      the actual server-side scoping enforcement, not just a UI
+      restriction.
+
+  src/routes/items.js
+    - GET /api/items?kind=&location= — builds the tree (optionally
+      filtered by kind), rolls up quantity per location leaf-to-root,
+      attaches price/value ONLY when the requester is admin.
+    - POST /api/items (admin only) — create a node (category or leaf).
+    - PATCH /api/items/:id (admin only) — rename / reparent / archive /
+      set price (price writes go to item_prices via upsert).
+
+  src/routes/dc.js
+    - POST /api/dc — validates the body, calls the `record_dc` RPC in
+      one call (atomic), 409s with the Postgres error message on
+      insufficient stock, 201s with the created DC otherwise.
+    - GET /api/dc — activity log with filters (location, direction,
+      item, party, dc_no, from/to date), strips price/value for
+      non-admins, attaches total_value for admins.
+    - GET /api/dc/:id — single DC formatted for a document/challan view;
+      blocks an operator from viewing another location's DC.
+
+  src/routes/reports.js
+    - GET /api/out-of-stock?location= — leaf items at exactly zero.
+    - GET /api/low-stock?location= — leaf items at/under their
+      alert_thresholds row (and > 0).
+    - PUT /api/low-stock/:itemId — set this location's threshold for an
+      item (used by the Alerts/Settings panel the mockups show).
+    - GET /api/valuation?location= (admin only) — per-location and
+      overall totals (qty × price).
+    - GET /api/inventory-books?item_id=&location=&from=&to= — the
+      per-item ledger: walks every dc_line for that item+location,
+      computes an opening balance by working backward from the CURRENT
+      stock row minus the net movement in the filtered window, then a
+      running balance forward through each entry to a closing balance.
+
+  scripts/provision-user.js
+    - CLI: `node scripts/provision-user.js --email ... --password ...
+      --name "..." --role operator|admin [--location Fabrication|
+      Finished]`. Creates the Supabase Auth user + the matching
+      inventory.profiles row. Run 3 times for the 3 real logins.
+
+  public/index.html
+    - Currently a placeholder ("Frontend not built yet — the API is
+      live under /api."). THIS IS THE NEXT THING TO REPLACE.
+
+  README.md, .env.example, .gitignore, package.json
+    - Standard setup/deploy docs. README covers: run db/schema.sql in
+      Supabase's SQL editor once, fill .env from .env.example
+      (SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY),
+      `npm install && npm run dev`, provision the 3 logins, then
+      `railway up` to deploy (no GitHub repo needed).
+
+  Smoke-tested this session: server boots; an unauthenticated
+  /api/locations call correctly returns 401; the static frontend route
+  returns 200. NOT YET tested against a real Supabase project (no
+  project credentials handed over yet) and NOT YET deployed to Railway.
+
+============================================================
+5. WHAT'S NOT DONE / NEXT STEPS
+============================================================
+1. FRONTEND — this is the actual next task. Build:
+     - The shared location-desk design (used by both Fabrication and
+       Finished, pointed at a different location): Materials tab +
+       Consumables tab (item tree, quantities only, no price ever),
+       Input DC wizard (item -> qty -> note), Output DC wizard (item ->
+       qty -> party/vehicle/address, blocks/warns over on-hand stock),
+       recent-activity log, low-stock Alerts page, per-item threshold
+       setting, DC search by dc_no/item/party.
+     - The Admin experience: homepage (Fabrication arrow, Finished
+       arrow, out-of-stock panel), per-location drill-in (tree WITH
+       price/value, Consumables tab same treatment, activity log
+       filterable), Inventory Books ledger view (searchable across every
+       item at both locations), Prices editor, Item-tree editor
+       (add/rename/reparent/archive/set price), and a formatted DC
+       document view (JK Racks letterhead, DC no., date, party/vehicle/
+       address, line items, totals, signatory block) when a DC is
+       clicked.
+     - Client's explicit choice: build this against the THREE REVIEWED
+       MOCKUP FILES for exact layout/styling, re-uploaded as v3.zip on
+       20 Sept 2026 (extracted contents: "JKAY Racks - Admin.html",
+       "JKAY Racks - Fabrication Desk.html", "JKAY Racks - Finished
+       Desk.html"). Remember these are Bundled Page exports (see the 18
+       Sept timeline entry) — read them as a design/behavior reference
+       and rebuild real, source-controllable HTML/CSS/JS wired to the
+       actual API above, don't try to ship the export format as-is.
+     - Design system to match: the client's existing CRM tool's "Paper &
+       Clay" look — warm-neutral base (soft cream, not stark white/dark),
+       one restrained accent color, thin 1px borders/soft shadows, pill-
+       shaped muted tags, one humanist sans, ~120-150ms transitions,
+       lightweight sidebar shell. Location screens should lean big tap
+       targets / minimal typing (may be used on a phone/tablet on the
+       shop floor); Admin can be denser/report-like. Full copy-paste
+       design brief is in JKAY_Inventory_Build_Plan.md section 9 (not
+       duplicated here — read that file if it still exists wherever this
+       project's docs live).
+
+2. REAL INTEGRATION TESTING — schema.sql has not been run against a real
+   Supabase project yet in this rebuild; the API has not been exercised
+   against real data end-to-end.
+
+3. DEPLOY — not yet pushed to Railway. Client chose to build everything
+   locally first and hand over real Supabase project URL/service-role
+   key + Railway access afterward.
+
+4. OPEN QUESTION carried over from the Round 4 rework (11 Sept 2026,
+   never explicitly re-confirmed): should an Output DC and its matching
+   Input DC on the other location be forced into one atomic, always-
+   equal transaction, instead of the current independent-rows model? If
+   this matters for whatever you're building, ask the client rather than
+   assuming either way.
+
+============================================================
+6. KEY CLIENT PREFERENCES / WORKING STYLE (carry these forward)
+============================================================
+- Prioritizes backend speed and cost, but explicitly REJECTS free-tier/
+  BaaS shortcuts for this particular project — it's real, multi-year,
+  production infra. Don't suggest free-tier shortcuts here.
+- Wants one consolidated invoice per infra provider even across separate
+  apps/projects — doesn't require sharing a database or process to get
+  that.
+- Prefers the simplest unifying mechanism over multiple bespoke ones —
+  Round 4 collapsed 4 actions into 2 (Input/Output DC) and 2 differently-
+  powered roles into 1 concept (location). When a simpler unifying model
+  is available, prefer it.
+- CRM is a separate, explicitly paused project for the same client — do
+  not resume or reference it unless the client brings it up again.
+- Communication style: direct, decisive, prefers reasonable default
+  technical decisions over repeated clarifying questions; will hand over
+  a full multi-point rework in one message where later points sometimes
+  reverse earlier-confirmed decisions — read the whole thing before
+  restating understanding back.
+- Wants this tool's visual design to match the existing CRM's "Paper &
+  Clay" system for brand consistency.

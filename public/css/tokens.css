@@ -1,0 +1,173 @@
+/* JKAY Racks — "Paper & Clay" design tokens.
+   Extracted from the reviewed mockups (mockups/*.html) so the real app
+   matches exactly what the client already approved. */
+
+:root {
+  /* ink / text */
+  --ink: #1f1e1c;
+  --ink-2: #2a2825;
+  --ink-3: #5f5b54;
+  --ink-4: #6f6a61;
+  --ink-5: #8d8579;
+  --muted: #a7a199;
+  --muted-2: #c4bfb5;
+
+  /* surfaces */
+  --bg: #faf9f7;
+  --surface: #ffffff;
+  --surface-2: #fdfcfa;
+  --field: #fbfaf7;
+  --field-2: #f9f8f5;
+  --tint: #f7f5f1;
+  --tint-2: #f9f7f4;
+  --track: #f2efe9;
+  --hover: #f6f4f0;
+
+  /* borders / rules */
+  --border: #e8e4dc;
+  --border-2: #eee9e0;
+  --border-3: #e2ddd3;
+  --track-off: #ddd8ce;
+  --dot: #d6d0c4;
+  --rule: #f0ece5;
+  --rule-2: #f4f1ea;
+  --rule-3: #f7f4ee;
+
+  /* accent (brand rust/orange) */
+  --accent: #c3441f;
+  --accent-ink: #a5361a;
+  --accent-border: #d8c3ac;
+  --accent-tint: #f4ece4;
+  --accent-tint-2: #fdf4ee;
+  --accent-border-2: #f0d6c6;
+  --accent-hover: #fbeade;
+  --accent-border-3: #e0b998;
+  --accent-ink-2: #7d5e4c;
+
+  /* output / "out" semantics */
+  --out-ink: #a8402c;
+  --out-tint: #f7e8e4;
+
+  /* good / input semantics */
+  --good: #3f7d52;
+  --good-ink: #2f6b45;
+  --good-dot: #7fbf93;
+  --good-tint: #f2f8f3;
+  --good-hover: #eaf4ec;
+  --good-border: #b3d0ba;
+  --good-border-2: #cfe0d4;
+  --good-border-3: #dfeae1;
+  --good-tint-2: #f6faf7;
+  --good-ink-2: #5c6f60;
+  --in-tint: #e7f1e9;
+
+  /* bad / error semantics */
+  --bad: #b0453c;
+  --bad-border: #f2d7d2;
+  --bad-tint: #fdf1ef;
+  --bad-tint-2: #fdf4f2;
+  --bad-tint-3: #fdf6f4;
+  --bad-hover: #fbebe7;
+
+  /* inverted (dark bar) */
+  --invert-bg: #1f1e1c;
+  --invert-ink: #f7f5f1;
+  --invert-muted: #a29b91;
+
+  --knob: #ffffff;
+  --scrim: rgba(31, 30, 28, 0.42);
+  --bg-blur: rgba(250, 249, 247, 0.93);
+
+  --sh-a: rgba(31, 30, 28, 0.05);
+  --sh-b: rgba(31, 30, 28, 0.09);
+  --sh-c: rgba(31, 30, 28, 0.1);
+  --sh-d: rgba(31, 30, 28, 0.2);
+  --sh-e: rgba(31, 30, 28, 0.22);
+  --sh-f: rgba(31, 30, 28, 0.28);
+
+  --font: 'Public Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, monospace;
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 2px var(--sh-a), 0 1px 1px var(--sh-b);
+  --shadow-pop: 0 8px 24px var(--sh-d), 0 2px 6px var(--sh-c);
+
+  --transition: 140ms ease;
+}
+
+/* Dark mode — applied via [data-theme="dark"] on <html>, set by the
+   Settings modal (Appearance: Light/Dark/System) and persisted in
+   localStorage. Values extracted live from the mockup bundle's dark mode
+   (getComputedStyle on :root[data-theme="dark"]). */
+:root[data-theme='dark'] {
+  --ink: #f3f0ea;
+  --ink-2: #e9e5dd;
+  --ink-3: #cec8be;
+  --ink-4: #b6afa4;
+  --ink-5: #9c958b;
+  --muted: #9b948b;
+  --muted-2: #736c64;
+
+  --bg: #18171b;
+  --surface: #201f24;
+  --surface-2: #262429;
+  --field: #1c1b20;
+  --field-2: #232127;
+  --tint: #232128;
+  --tint-2: #26242c;
+  --track: #2a2830;
+  --hover: #2f2c35;
+
+  --border: #37343d;
+  --border-2: #3e3a45;
+  --border-3: #46414d;
+  --track-off: #3e3a45;
+  --dot: #565061;
+  --rule: #2e2c34;
+  --rule-2: #282630;
+  --rule-3: #24222b;
+
+  --accent: #e9663c;
+  --accent-ink: #f2886a;
+  --accent-border: #6d3b2a;
+  --accent-tint: #2f2019;
+  --accent-tint-2: #33221a;
+  --accent-border-2: #5c3426;
+  --accent-hover: #3c261c;
+  --accent-border-3: #7c4632;
+  --accent-ink-2: #dcae94;
+
+  --out-ink: #f2886a;
+  --out-tint: #3b2319;
+
+  --good: #63ad7e;
+  --good-ink: #80c698;
+  --good-dot: #7fbf93;
+  --good-tint: #1c2721;
+  --good-hover: #23312a;
+  --good-border: #3a5941;
+  --good-border-2: #314c39;
+  --good-border-3: #36523e;
+  --good-tint-2: #1e2823;
+  --good-ink-2: #a4c4b0;
+  --in-tint: #202d25;
+
+  --bad: #e87c6e;
+  --bad-border: #6d3831;
+  --bad-tint: #2f1e1c;
+  --bad-tint-2: #32211e;
+  --bad-tint-3: #2c1d1b;
+  --bad-hover: #3b2421;
+
+  --invert-bg: #f3f0ea;
+  --invert-ink: #1f1e1c;
+  --invert-muted: #6b655d;
+
+  --knob: #e9e5dd;
+  --scrim: rgba(0, 0, 0, 0.62);
+  --bg-blur: rgba(24, 23, 27, 0.93);
+}

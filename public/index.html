@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>JK Racks Inventory</title>
+<link rel="stylesheet" href="/css/app.css" />
+<script src="/vendor/supabase.js"></script>
+</head>
+<body>
+<div class="loading-state">Loading…</div>
+<script src="/config.js"></script>
+<script src="/js/supabase-client.js"></script>
+<script src="/js/api.js"></script>
+<script>
+  // Entry point: figure out who's signed in and route to the right desk.
+  // Fabrication/Finished go straight to their own location screen; Admin
+  // goes to the admin overview. Nobody lands on this page for long.
+  (async function () {
+    const session = await window.JKAuth.getSession();
+    if (!session) {
+      window.location.href = '/login.html';
+      return;
+    }
+    try {
+      const { user } = await window.JKApi.me();
+      if (user.role === 'admin') {
+        window.location.href = '/admin.html';
+        return;
+      }
+      // Operator — look up which location they're pinned to.
+      const { locations } = await window.JKApi.locations();
+      const loc = locations.find((l) => l.id === user.locationId);
+      const name = (loc?.name || '').toLowerCase();
+      window.location.href = name === 'finished' ? '/finished.html' : '/fab.html';
+    } catch (err) {
+      document.body.innerHTML = '<div class="loading-state">Could not sign in — <a href="/login.html">try again</a>.</div>';
+    }
+  })();
+</script>
+</body>
+</html>

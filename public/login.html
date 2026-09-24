@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>JK Racks — Sign in</title>
+<link rel="stylesheet" href="/css/app.css" />
+<script src="/vendor/supabase.js"></script>
+<!-- Applies the saved Light/Dark/System preference before paint, same as
+     every other screen — otherwise sign-in would always render light even
+     with dark mode chosen. -->
+<script src="/js/ui-common.js"></script>
+</head>
+<body>
+<div class="login-shell">
+  <div class="login-card">
+    <div class="login-logo-row">
+      <img src="/assets/logo-wordmark.png" alt="JK Racks" />
+    </div>
+    <div class="login-panel">
+      <div class="login-panel-top"></div>
+      <div class="login-panel-body">
+        <div class="login-title">Sign in</div>
+        <div class="login-sub">Fabrication, Finished, or Admin — use the login you were given.</div>
+        <form id="login-form">
+          <div class="field">
+            <label>Email</label>
+            <input type="email" id="email" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <div class="field-pass-wrap">
+              <input type="password" id="password" autocomplete="current-password" required />
+              <button type="button" class="field-pass-toggle" id="pass-toggle" tabindex="-1">Show</button>
+            </div>
+          </div>
+          <div class="field error hidden" id="login-error"></div>
+          <button type="submit" class="btn btn-primary btn-block login-submit" id="login-btn">Sign in</button>
+        </form>
+      </div>
+    </div>
+    <div class="login-footer">
+      <div class="name">JK Racks Metal Sheet Works</div>
+      <div class="login-locations">
+        <span>Fabrication</span><span>Finished</span><span>Admin</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/config.js"></script>
+<script src="/js/supabase-client.js"></script>
+<script>
+  (async function () {
+    // Already signed in? Skip straight to routing.
+    const session = await window.JKAuth.getSession();
+    if (session) window.location.href = '/';
+  })();
+
+  document.getElementById('pass-toggle').addEventListener('click', () => {
+    const input = document.getElementById('password');
+    const btn = document.getElementById('pass-toggle');
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    btn.textContent = showing ? 'Show' : 'Hide';
+  });
+
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const errorEl = document.getElementById('login-error');
+    const btn = document.getElementById('login-btn');
+    errorEl.classList.add('hidden');
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+    const { error } = await window.JKAuth.signIn(email, password);
+    if (error) {
+      errorEl.textContent = error.message || 'Could not sign in — check the email and password.';
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+      return;
+    }
+    window.location.href = '/';
+  });
+</script>
+</body>
+</html>
