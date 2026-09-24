@@ -14,7 +14,7 @@ body {
 }
 a { color: inherit; }
 button { font-family: inherit; }
-input, select, textarea { font-family: inherit; font-size: inherit; }
+input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
 
 .hidden { display: none !important; }
 

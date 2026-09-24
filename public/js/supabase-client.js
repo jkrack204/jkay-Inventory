@@ -12,7 +12,16 @@
     console.error('Missing Supabase config — set window.__JKAY_CONFIG__ before loading this script.');
   }
   window.supabaseClient = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true },
+    // Session-only auth, deliberately, for these shared shop-floor devices
+    // (decided 25 Sept 2026): storing the session in sessionStorage instead
+    // of the default localStorage means closing the browser/tab signs you
+    // out, while navigating between this app's own pages (it's a
+    // multi-page app — login.html, admin.html, fab.html etc. are separate
+    // full page loads, not one SPA) still works, because sessionStorage
+    // survives navigation and reload within the same tab; it just doesn't
+    // survive the tab/browser closing. autoRefreshToken stays on so a
+    // session that's still open doesn't expire mid-shift.
+    auth: { persistSession: true, storage: window.sessionStorage, autoRefreshToken: true },
   });
 
   window.JKAuth = {

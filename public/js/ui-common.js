@@ -45,10 +45,12 @@
   }
 
   // ---- Logo mark (real JK Racks lockup, supplied by the client) ----
+  // Same wordmark file used on the login screen — one logo across the app
+  // instead of the separate icon+wordmark variant that used to live here.
   function logoMarkHtml() {
     return `
       <span class="brand-mark">
-        <img src="/assets/logo-header.png" alt="JK Racks — Pride of Quality" />
+        <img src="/assets/logo-wordmark.png" alt="JK Racks" />
       </span>
     `;
   }
