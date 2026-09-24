@@ -56,10 +56,14 @@
         <div class="divider"></div>
         <div class="context"><div class="eyebrow">Admin</div><div class="title" id="ctx-title">Both locations</div></div>
         <div class="spacer"></div>
+        ${state.view !== 'home' ? `<button class="btn btn-back" id="btn-admin-home">&larr; Admin home</button>` : ''}
         <div class="nav-actions">
-          <button class="btn" data-nav="books">Inventory Books</button>
-          <button class="btn" data-nav="prices">Prices</button>
-          <button class="btn" data-nav="trees">Item trees</button>
+          <button class="btn${state.view === 'books' ? ' active' : ''}" data-nav="books">Inventory Books</button>
+          <button class="btn${state.view === 'prices' ? ' active' : ''}" data-nav="prices">Prices</button>
+          <button class="btn${state.view === 'trees' ? ' active' : ''}" data-nav="trees">Item trees</button>
+          <button class="btn${state.view === 'dcs' ? ' active' : ''}" data-nav="dcs">DC Log</button>
+          <button class="btn${state.view === 'edit-log' ? ' active' : ''}" data-nav="edit-log">Edit Log</button>
+          <button class="btn${state.view === 'users' ? ' active' : ''}" data-nav="users">Users</button>
           <button class="btn-gear" id="btn-settings" title="Settings">&#9881;</button>
           <button class="btn icon" id="btn-signout" title="Sign out">&#8594;</button>
         </div>
@@ -67,6 +71,8 @@
       <div class="page" id="view-root"></div>
     `;
     root.querySelectorAll('[data-nav]').forEach((b) => { b.onclick = () => { window.location.hash = b.dataset.nav; }; });
+    const backBtn = root.querySelector('#btn-admin-home');
+    if (backBtn) backBtn.onclick = () => { window.location.hash = 'home'; };
     root.querySelector('#btn-signout').onclick = () => window.JKAuth.signOut();
     root.querySelector('#btn-settings').onclick = () => window.JKUi.openSettingsModal({});
 
@@ -76,6 +82,9 @@
     if (state.view === 'books') return renderBooks(v);
     if (state.view === 'prices') return renderPrices(v);
     if (state.view === 'trees') return renderTrees(v);
+    if (state.view === 'dcs') return renderDcs(v);
+    if (state.view === 'edit-log') return renderEditLog(v);
+    if (state.view === 'users') return renderUsers(v);
   }
 
   // ---------------------------------------------------------------
@@ -156,9 +165,16 @@
       </div>
     `;
 
-    const [{ per_location, overall }, treesByLoc] = await Promise.all([
+    // All four fetch groups fired together up front — none of them actually
+    // depend on each other's data, only the rendering below does. Used to
+    // be two sequential `await Promise.all(...)` batches (tiles, then
+    // attention), which cost a full extra network round-trip on every load
+    // of the busiest screen in Admin for no reason.
+    const [{ per_location, overall }, treesByLoc, outByLoc, lowLists] = await Promise.all([
       window.JKApi.valuation(),
       Promise.all(state.locations.map((l) => window.JKApi.items({ location: l.id }))),
+      window.JKApi.outOfStock(),
+      Promise.all(state.locations.map((l) => window.JKApi.lowStock({ location: l.id }))),
     ]);
 
     const indexByLoc = {};
@@ -200,11 +216,7 @@
     `;
 
     // Needs attention: out-of-stock + low-stock, grouped by location > top-level category.
-    const [outByLoc, lowLists] = await Promise.all([
-      window.JKApi.outOfStock(),
-      Promise.all(state.locations.map((l) => window.JKApi.lowStock({ location: l.id }))),
-    ]);
-
+    // (outByLoc/lowLists were already fetched above, in parallel with tiles.)
     const groups = [];
     function groupFor(locId, locName, top) {
       let g = groups.find((x) => x.locId === locId && x.topId === top.topId);
@@ -288,12 +300,34 @@
           <div class="col-value" style="flex:0 0 140px; padding-left:10px;">Value &#8377;</div>
         </div>
         <div id="tree-body"><div class="loading-state">Loading…</div></div>
+        <div class="tree-total-row" id="tree-total"></div>
       </div>
-      <div class="section-head"><h2>Activity</h2></div>
-      <div class="tree-table" id="dc-list"><div class="loading-state">Loading…</div></div>
+      <section class="activity-panel">
+        <div class="activity-panel-head">
+          <div class="title">Activity at ${esc(loc.name)}</div>
+          <div class="meta" id="dc-count"></div>
+          <div class="spacer"></div>
+          <div class="search-pill sm"><span class="glyph">&#8981;</span><input id="dc-search" placeholder="DC no., item or party" /></div>
+          <div class="seg" id="dc-filter">
+            <button data-val="all" class="active">All</button>
+            <button data-val="in">Input</button>
+            <button data-val="out">Output</button>
+          </div>
+        </div>
+        <div class="activity-table-head">
+          <div style="flex:0 0 96px;">DC</div>
+          <div style="flex:1 1 auto;">Item and party</div>
+          <div style="flex:0 0 110px; text-align:right;">Qty</div>
+          <div style="flex:0 0 124px; text-align:right; padding-left:10px;">Value &#8377;</div>
+          <div style="flex:0 0 104px; text-align:right; padding-left:10px;">When</div>
+        </div>
+        <div id="dc-list"><div class="loading-state">Loading…</div></div>
+      </section>
     `;
     el.querySelectorAll('.tab').forEach((b) => { b.onclick = () => { state.kind = b.dataset.kind; renderLocation(el, locId); }; });
     el.querySelector('#search').oninput = debounce((e) => { state.search = e.target.value; loadAndRenderTree(locId); }, 150);
+    let dcSearch = '';
+    let dcFilter = 'all';
 
     const [{ items: fullTree }, { dcs }] = await Promise.all([
       window.JKApi.items({ location: locId }),
@@ -337,18 +371,64 @@
 
     await loadAndRenderTree(locId);
 
-    const dcList = el.querySelector('#dc-list');
-    dcList.innerHTML = dcs.length ? dcs.map((dc) => `
-      <div class="dc-row" data-id="${dc.id}">
-        <div class="dc-dir ${dc.direction}">${dc.direction === 'in' ? '↓' : '↑'}</div>
-        <div class="main">
-          <div class="dc-no">${esc(dc.dc_no)} &middot; ${esc(dc.party)}</div>
-          <div class="dc-sub">${dc.lines.map((l) => `${JKFmt.qty(l.qty)} ${esc(l.unit)} ${esc(l.item_name)}`).join(', ')}</div>
-        </div>
-        <div class="dc-value">${JKFmt.money(dc.total_value)}</div>
-      </div>
-    `).join('') : `<div class="empty-state">No activity yet.</div>`;
-    dcList.querySelectorAll('.dc-row').forEach((row) => { row.onclick = () => openDcDocument(row.dataset.id); });
+    // Tree total row — mockup-exact: "Total · Materials/Consumables at
+    // <Location>" against the value for whichever tab is active.
+    const kindLabel = state.kind === 'consumable' ? 'Consumables' : 'Materials';
+    el.querySelector('#tree-total').innerHTML = `
+      <div class="left">Total &middot; ${esc(kindLabel)} at ${esc(loc.name)}</div>
+      <div class="right">${JKFmt.money(state.kind === 'consumable' ? consValue : matValue)}</div>
+    `;
+
+    // Activity — mockup-exact: search + All/Input/Output filter, and a
+    // DC / Item and party / Qty / Value / When row layout with a small
+    // direction badge instead of the desk's simpler list.
+    function renderDcRows() {
+      const dcListEl = el.querySelector('#dc-list');
+      if (!dcListEl) return;
+      const q = dcSearch.trim().toLowerCase();
+      const rows = dcs.filter((dc) => {
+        if (dcFilter !== 'all' && dc.direction !== dcFilter) return false;
+        if (!q) return true;
+        const hay = [dc.dc_no, dc.party, ...dc.lines.map((l) => l.item_name)].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+      });
+      el.querySelector('#dc-count').textContent = `${JKFmt.qty(dcs.length)} at this location`;
+      if (!rows.length) { dcListEl.innerHTML = `<div class="empty-state">${dcs.length ? 'No DCs match that search.' : 'No activity yet.'}</div>`; return; }
+      dcListEl.innerHTML = rows.map((dc) => {
+        const itemsLabel = dc.lines.length ? esc(dc.lines[0].item_name) + (dc.lines.length > 1 ? ` + ${dc.lines.length - 1} more` : '') : '';
+        const subBase = dc.direction === 'out'
+          ? `out to ${esc(dc.party || '')}${dc.note ? ` &middot; ${esc(dc.note)}` : ''}`
+          : `${dc.note ? esc(dc.note) : (dc.party ? esc(dc.party) : '')}`;
+        const byName = dc.created_by_name ? `by ${esc(dc.created_by_name)}` : '';
+        const sub = [subBase, byName].filter(Boolean).join(' &middot; ') + (dc.edit_count ? ' &middot; <span style="color:var(--accent);">edited</span>' : '');
+        const totalQty = dc.lines.reduce((s, l) => s + Number(l.qty), 0);
+        const qtyLabel = dc.lines.length === 1 ? `${JKFmt.qty(dc.lines[0].qty)} ${esc(dc.lines[0].unit)}` : `${JKFmt.qty(totalQty)} units`;
+        return `
+          <a class="activity-row" href="/dc.html?id=${dc.id}" target="_blank" rel="noopener">
+            <div class="ar-dc">
+              <span class="ar-dir ${dc.direction}">${dc.direction === 'in' ? '&#8595;' : '&#8593;'}</span>
+              <span class="ar-no">${esc(dc.dc_no)}</span>
+            </div>
+            <div class="ar-main">
+              <div class="ar-item">${itemsLabel}</div>
+              <div class="ar-sub">${sub}</div>
+            </div>
+            <div class="ar-qty">${qtyLabel}</div>
+            <div class="ar-value">${JKFmt.money(dc.total_value)}</div>
+            <div class="ar-when">${JKFmt.dateTime(dc.created_at)}</div>
+          </a>
+        `;
+      }).join('');
+    }
+    renderDcRows();
+    el.querySelector('#dc-search').oninput = debounce((e) => { dcSearch = e.target.value; renderDcRows(); }, 150);
+    el.querySelectorAll('#dc-filter button').forEach((b) => {
+      b.onclick = () => {
+        dcFilter = b.dataset.val;
+        el.querySelectorAll('#dc-filter button').forEach((x) => x.classList.toggle('active', x === b));
+        renderDcRows();
+      };
+    });
   }
 
   let currentTree = [];
@@ -430,60 +510,481 @@
   }
 
   // ---------------------------------------------------------------
-  // Inventory Books (search across every item at both locations)
+  // Inventory Books — a single flat list spanning BOTH locations (not a
+  // per-location dropdown), 4 summary cards, and a full-screen ledger
+  // overlay per item (rate + stock value instead of the desk's
+  // inwards/outwards). Replicated one-to-one from the admin mockup.
   // ---------------------------------------------------------------
+  let booksLeaves = [];
+  let booksSearch = '';
+
   async function renderBooks(el) {
-    document.getElementById('ctx-title').textContent = 'Inventory Books';
+    document.getElementById('ctx-title').textContent = 'Inventory books';
     el.innerHTML = `
-      <div class="section-head">
-        <select id="book-loc"></select>
-        <select id="book-item" style="min-width:260px;"><option>Loading…</option></select>
-      </div>
-      <div id="book-content"><div class="loading-state">Choose a location and an item.</div></div>
-    `;
-    const locSel = el.querySelector('#book-loc');
-    locSel.innerHTML = state.locations.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
-
-    async function loadItemsFor(locId) {
-      const [{ items: mats }, { items: cons }] = await Promise.all([
-        window.JKApi.items({ kind: 'material', location: locId }),
-        window.JKApi.items({ kind: 'consumable', location: locId }),
-      ]);
-      const leaves = [];
-      (function collect(nodes) { nodes.forEach((n) => { if (n.isLeaf) leaves.push(n); else collect(n.children); }); })([...mats, ...cons]);
-      return leaves;
-    }
-
-    async function loadBook(locId, itemId, leaves) {
-      const content = el.querySelector('#book-content');
-      if (!itemId) { content.innerHTML = `<div class="empty-state">No items.</div>`; return; }
-      content.innerHTML = `<div class="loading-state">Loading…</div>`;
-      const book = await window.JKApi.inventoryBooks({ item_id: itemId, location: locId });
-      const item = leaves.find((n) => n.id === itemId);
-      const rows = [`<div class="tree-row parent"><div class="col-name">Opening balance</div><div class="col-qty">${JKFmt.qty(book.opening_balance)} ${esc(item?.unit || '')}</div><div class="col-price"></div><div class="col-value"></div></div>`];
-      book.entries.forEach((e) => {
-        rows.push(`
-          <div class="dc-row">
-            <div class="dc-dir ${e.direction}">${e.direction === 'in' ? '↓' : '↑'}</div>
-            <div class="main"><div class="dc-no">${esc(e.dc_no)} &middot; ${esc(e.party)}</div>
-              <div class="dc-sub">${e.direction === 'in' ? '+' : '-'}${JKFmt.qty(e.qty)} ${esc(item?.unit || '')} &middot; balance ${JKFmt.qty(e.balance)}</div></div>
-            <div class="dc-value">${JKFmt.money(e.value)}</div>
+      <div class="summary-cards" id="books-summary"><div class="loading-state">Loading…</div></div>
+      <div class="book-list with-loc" id="books-card">
+        <div class="book-card-head">
+          <div class="titles">
+            <div class="h">Every item</div>
+            <div class="sub" id="books-meta">Loading…</div>
           </div>
-        `);
+          <div class="search-pill">
+            <span class="glyph">&#8981;</span>
+            <input id="books-search" placeholder="Search any item" value="${esc(booksSearch)}" />
+          </div>
+        </div>
+        <div id="books-rows"><div class="loading-state">Loading…</div></div>
+      </div>
+    `;
+
+    // One call each: the global item tree already spans both locations
+    // (admin, no ?location=) and carries price/value; DCs likewise with
+    // no location filter returns both locations' challans.
+    const [{ items: tree }, { dcs }] = await Promise.all([
+      window.JKApi.items({}),
+      window.JKApi.dcs({}),
+    ]);
+    const locById = new Map(state.locations.map((l) => [l.id, l]));
+    booksLeaves = flattenLeavesWithPathAdmin(tree).sort((a, b) => a.node.name.localeCompare(b.node.name));
+
+    const moveByItem = {};
+    let inwardsValue = 0, inwardsUnits = 0, outwardsValue = 0, outwardsUnits = 0, inCount = 0, outCount = 0;
+    dcs.forEach((dc) => {
+      if (dc.direction === 'in') inCount++; else outCount++;
+      (dc.lines || []).forEach((l) => {
+        const m = moveByItem[l.item_id] || (moveByItem[l.item_id] = { in: 0, out: 0, n: 0 });
+        m.n += 1;
+        if (dc.direction === 'in') { m.in += Number(l.qty); inwardsValue += Number(l.value || 0); inwardsUnits += Number(l.qty); }
+        else { m.out += Number(l.qty); outwardsValue += Number(l.value || 0); outwardsUnits += Number(l.qty); }
       });
-      rows.push(`<div class="tree-row parent"><div class="col-name">Closing balance</div><div class="col-qty">${JKFmt.qty(book.closing_balance)} ${esc(item?.unit || '')}</div><div class="col-price"></div><div class="col-value"></div></div>`);
-      content.innerHTML = `<div class="tree-table">${rows.join('')}</div>`;
+    });
+
+    const zeroCount = booksLeaves.filter((e) => Number(e.node.qtyByLocation?.[e.node.location_id] || 0) <= 0).length;
+
+    el.querySelector('#books-summary').innerHTML = `
+      <div class="summary-card">
+        <div class="label">Items on the books</div>
+        <div class="value">${JKFmt.qty(booksLeaves.length)}</div>
+        <div class="sub${zeroCount ? ' bad' : ''}">${JKFmt.qty(zeroCount)} at zero</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Challans</div>
+        <div class="value">${JKFmt.qty(dcs.length)}</div>
+        <div class="sub">${JKFmt.qty(inCount)} in &middot; ${JKFmt.qty(outCount)} out</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Inwards value</div>
+        <div class="value good">${JKFmt.money(inwardsValue)}</div>
+        <div class="sub">${JKFmt.qty(inwardsUnits)} units received</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Outwards value</div>
+        <div class="value">${JKFmt.money(outwardsValue)}</div>
+        <div class="sub">${JKFmt.qty(outwardsUnits)} units dispatched</div>
+      </div>
+    `;
+
+    el.querySelector('#books-meta').innerHTML = `${JKFmt.qty(booksLeaves.length)} items &middot; open any item for its full DC history`;
+
+    function renderRows() {
+      const rowsEl = el.querySelector('#books-rows');
+      if (!rowsEl) return;
+      const q = booksSearch.trim().toLowerCase();
+      const rows = booksLeaves.filter((e) => !q || (e.node.name + ' ' + e.breadcrumb).toLowerCase().includes(q));
+      if (!rows.length) { rowsEl.innerHTML = `<div class="empty-state">No items match that search.</div>`; return; }
+      rowsEl.innerHTML = `
+        <div class="book-list-head">
+          <div class="bkcol-name">Item</div>
+          <div class="bkcol-onhand">On hand</div>
+          <div class="bkcol-price">Price &#8377;</div>
+          <div class="bkcol-value">Value &#8377;</div>
+          <div class="bkcol-in">Inwards</div>
+          <div class="bkcol-out">Outwards</div>
+          <div class="bkcol-dcs">DCs</div>
+        </div>
+        ${rows.map((e) => {
+          const loc = locById.get(e.node.location_id);
+          const qty = Number(e.node.qtyByLocation?.[e.node.location_id] || 0);
+          const zero = qty <= 0;
+          const mv = moveByItem[e.node.id] || { in: 0, out: 0, n: 0 };
+          const value = e.node.price != null ? e.node.price * qty : 0;
+          return `
+            <button type="button" class="book-row" data-id="${e.node.id}">
+              <span class="status-dot${zero ? ' bad' : ''}"></span>
+              <span class="bkcol-name">
+                <span class="item-name">${esc(e.node.name)}</span>
+                <span class="item-crumb">${esc(e.breadcrumb || 'Top level')}</span>
+              </span>
+              <span class="loc-pill ${loc?.name === 'Fabrication' ? 'fab' : 'finished'}">${esc(loc?.name || '')}</span>
+              <span class="bkcol-onhand${zero ? ' zero' : ''}"><span class="qty-num">${JKFmt.qty(qty)}</span><span class="unit"> ${esc(e.node.unit)}</span></span>
+              <span class="bkcol-price">${e.node.price != null ? plainNum(e.node.price) : '&mdash;'}</span>
+              <span class="bkcol-value">${JKFmt.money(value)}</span>
+              <span class="bkcol-in">${mv.in ? '+' + JKFmt.qty(mv.in) : '&mdash;'}</span>
+              <span class="bkcol-out">${mv.out ? '&minus;' + JKFmt.qty(mv.out) : '&mdash;'}</span>
+              <span class="bkcol-dcs">${mv.n}</span>
+            </button>
+          `;
+        }).join('')}
+      `;
+      rowsEl.querySelectorAll('.book-row').forEach((row) => { row.onclick = () => openBooksLedger(row.dataset.id); });
+    }
+    renderRows();
+    el.querySelector('#books-search').oninput = debounce((e) => { booksSearch = e.target.value; renderRows(); }, 150);
+  }
+
+  // Same leaf-flattening as the location desk's flattenLeavesWithPath, but
+  // over the admin global tree (both locations' roots mixed together) and
+  // keeping each leaf's own location_id/price for the loc pill + ledger.
+  function flattenLeavesWithPathAdmin(nodes) {
+    const out = [];
+    (function walk(list, chain) {
+      list.forEach((n) => {
+        if (n.isLeaf) {
+          out.push({ node: n, breadcrumb: chain.join(' › ') });
+        } else {
+          walk(n.children, chain.concat(n.name));
+        }
+      });
+    })(nodes, []);
+    return out;
+  }
+
+  // Full-screen ledger overlay — same shell as the location desk's, but
+  // with admin's stat set (on hand, challans, rate, stock value).
+  async function openBooksLedger(itemId) {
+    const entry = booksLeaves.find((e) => e.node.id === itemId);
+    if (!entry) return;
+    const item = entry.node;
+    const loc = state.locations.find((l) => l.id === item.location_id);
+    let range = { from: '', to: '' };
+
+    const overlay = document.createElement('div');
+    overlay.className = 'bookov';
+    overlay.innerHTML = `
+      <div class="bookov-head">
+        <div class="bookov-titles">
+          <div class="bookov-eyebrow">Inventory book &middot; ${esc(loc?.name || '')}</div>
+          <div class="bookov-name">${esc(item.name)}</div>
+          <div class="bookov-crumb">${esc(entry.breadcrumb || 'Top level')}</div>
+        </div>
+        <div class="bookov-range">
+          <label>From <input type="date" id="bookov-from" /></label>
+          <label>To <input type="date" id="bookov-to" /></label>
+          <button type="button" class="btn btn-sm" id="bookov-range-clear">Clear</button>
+        </div>
+        <div id="bookov-stats" style="display:flex; gap:20px; flex-wrap:wrap;"></div>
+        <button type="button" class="bookov-close" id="bookov-close">Close</button>
+      </div>
+      <div class="bookov-body"><div class="bookov-card" id="bookov-card"><div class="loading-state">Loading…</div></div></div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#bookov-close').onclick = () => overlay.remove();
+    overlay.querySelector('#bookov-from').onchange = (e) => { range.from = e.target.value; loadLedger(); };
+    overlay.querySelector('#bookov-to').onchange = (e) => { range.to = e.target.value; loadLedger(); };
+    overlay.querySelector('#bookov-range-clear').onclick = () => {
+      range = { from: '', to: '' };
+      overlay.querySelector('#bookov-from').value = '';
+      overlay.querySelector('#bookov-to').value = '';
+      loadLedger();
+    };
+
+    async function loadLedger() { await renderLedger(); }
+    await renderLedger();
+
+    async function renderLedger() {
+    const book = await window.JKApi.inventoryBooks({ item_id: itemId, location: item.location_id, from: range.from || undefined, to: range.to ? range.to + 'T23:59:59' : undefined });
+    const held = Number(book.closing_balance);
+    const rate = item.price != null ? item.price : null;
+    const stockValue = rate != null ? rate * held : 0;
+
+    overlay.querySelector('#bookov-stats').innerHTML = [
+      { label: `on hand &middot; ${esc(item.unit)}`, value: JKFmt.qty(held), bad: held === 0 },
+      { label: 'challans', value: JKFmt.qty(book.entries.length) },
+      { label: 'rate', value: rate != null ? JKFmt.money(rate) : '&mdash;' },
+      { label: 'stock value', value: JKFmt.money(stockValue) },
+    ].map((s) => `<div class="bookov-stat"><div class="value${s.bad ? ' bad' : ''}">${s.value}</div><div class="label">${s.label}</div></div>`).join('');
+
+    const opening = Number(book.opening_balance);
+    const short = opening < 0;
+    const totalIn = book.entries.filter((e) => e.direction === 'in').reduce((s, e) => s + Number(e.qty), 0);
+    const totalOut = book.entries.filter((e) => e.direction === 'out').reduce((s, e) => s + Number(e.qty), 0);
+    const rows = book.entries.slice().reverse().map((e) => `
+      <div class="bookov-row">
+        <span class="c-date">${JKFmt.date(e.created_at)}</span>
+        <span class="c-dcno">
+          <span class="dc-badge ${e.direction}">${e.direction === 'in' ? '&#8595;' : '&#8593;'}</span>
+          <span class="dc-no">${esc(e.dc_no)}</span>
+        </span>
+        <span class="c-part">
+          <span class="party">${esc(e.direction === 'in' ? (e.party || 'Stock received') : (e.party || '&mdash;'))}</span>
+          <span class="meta">${e.direction === 'in' ? 'Input DC' : 'Output DC'} &middot; ${JKFmt.dateTime(e.created_at).split(' · ')[1] || ''}</span>
+        </span>
+        <span class="c-in">${e.direction === 'in' ? JKFmt.qty(e.qty) : '&mdash;'}</span>
+        <span class="c-out">${e.direction === 'out' ? JKFmt.qty(e.qty) : '&mdash;'}</span>
+        <span class="c-bal">${JKFmt.qty(e.balance)}</span>
+      </div>
+    `).join('');
+
+    overlay.querySelector('#bookov-card').innerHTML = `
+      <div class="bookov-thead">
+        <span class="c-date">Date</span>
+        <span class="c-dcno">DC no.</span>
+        <span class="c-part">Particulars</span>
+        <span class="c-in">Inwards</span>
+        <span class="c-out">Outwards</span>
+        <span class="c-bal">Balance</span>
+      </div>
+      <div class="bookov-obrow${short ? ' short' : ''}">
+        <span class="c-date"></span>
+        <span class="c-dcno"></span>
+        <span class="c-part">Opening balance <span class="note">&middot; ${short ? 'short against recorded DCs' : 'before the DCs below'}</span></span>
+        <span class="c-in"></span>
+        <span class="c-out"></span>
+        <span class="c-bal">${JKFmt.qty(opening)} ${esc(item.unit)}</span>
+      </div>
+      ${book.entries.length ? rows : `<div class="bookov-empty">No DC has ever touched this item.</div>`}
+      <div class="bookov-crow">
+        <span class="c-date"></span>
+        <span class="c-dcno"></span>
+        <span class="c-part">Closing balance</span>
+        <span class="c-in">${JKFmt.qty(totalIn)}</span>
+        <span class="c-out">${JKFmt.qty(totalOut)}</span>
+        <span class="c-bal">${JKFmt.qty(held)} ${esc(item.unit)}</span>
+      </div>
+    `;
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // DC Log — every DC across both locations. Admin can open any of them
+  // (the document page itself carries the edit action — anytime, with the
+  // affect-stock choice, since that's an admin-only capability), filter by
+  // location/direction/date/search, and export the current filter as CSV.
+  // ---------------------------------------------------------------
+  let dcsFilters = { location: '', direction: 'all', from: '', to: '', search: '' };
+
+  async function renderDcs(el) {
+    document.getElementById('ctx-title').textContent = 'DC Log';
+    el.innerHTML = `
+      <div class="section-head"><h2>DC Log</h2><div class="meta">Every Input/Output DC across both locations. Open one to view, print, or (admin) correct it — anytime, with the choice of whether the correction moves stock.</div></div>
+      <div class="activity-panel">
+        <div class="activity-panel-head">
+          <div class="title">All DCs</div>
+          <div class="meta" id="dcs-count"></div>
+          <div class="spacer"></div>
+          <select id="dcs-loc" class="btn" style="font-weight:600;">
+            <option value="">All locations</option>
+            ${state.locations.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}
+          </select>
+          <label style="display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--ink-4); font-weight:600;">From
+            <input type="date" id="dcs-from" style="height:32px;" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--ink-4); font-weight:600;">To
+            <input type="date" id="dcs-to" style="height:32px;" />
+          </label>
+          <div class="search-pill sm"><span class="glyph">&#8981;</span><input id="dcs-search" placeholder="DC no., item or party" /></div>
+          <div class="seg" id="dcs-filter">
+            <button data-val="all" class="active">All</button>
+            <button data-val="in">Input</button>
+            <button data-val="out">Output</button>
+          </div>
+          <button class="btn btn-accent-tint" id="dcs-export">Export CSV</button>
+        </div>
+        <div class="activity-table-head">
+          <div style="flex:0 0 96px;">DC</div>
+          <div style="flex:0 0 110px;">Location</div>
+          <div style="flex:1 1 auto;">Item and party</div>
+          <div style="flex:0 0 130px;">Recorded by</div>
+          <div style="flex:0 0 124px; text-align:right; padding-left:10px;">Value &#8377;</div>
+          <div style="flex:0 0 104px; text-align:right; padding-left:10px;">When</div>
+        </div>
+        <div id="dcs-list"><div class="loading-state">Loading…</div></div>
+      </div>
+    `;
+
+    el.querySelector('#dcs-loc').value = dcsFilters.location;
+    el.querySelector('#dcs-from').value = dcsFilters.from;
+    el.querySelector('#dcs-to').value = dcsFilters.to;
+    el.querySelector('#dcs-search').value = dcsFilters.search;
+    el.querySelectorAll('#dcs-filter button').forEach((b) => b.classList.toggle('active', b.dataset.val === dcsFilters.direction));
+
+    async function load() {
+      const listEl = el.querySelector('#dcs-list');
+      const countEl = el.querySelector('#dcs-count');
+      listEl.innerHTML = `<div class="loading-state">Loading…</div>`;
+      const { dcs } = await window.JKApi.dcs({
+        location: dcsFilters.location || undefined,
+        direction: dcsFilters.direction !== 'all' ? dcsFilters.direction : undefined,
+        from: dcsFilters.from || undefined,
+        to: dcsFilters.to ? dcsFilters.to + 'T23:59:59' : undefined,
+      });
+      const q = dcsFilters.search.trim().toLowerCase();
+      const rows = !q ? dcs : dcs.filter((dc) => {
+        const hay = [dc.dc_no, dc.party, ...dc.lines.map((l) => l.item_name)].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+      });
+      countEl.textContent = `${JKFmt.qty(rows.length)} of ${JKFmt.qty(dcs.length)} loaded`;
+      if (!rows.length) { listEl.innerHTML = `<div class="empty-state">No DCs match this filter.</div>`; return; }
+      listEl.innerHTML = rows.map((dc) => {
+        const itemsLabel = dc.lines.length ? esc(dc.lines[0].item_name) + (dc.lines.length > 1 ? ` + ${dc.lines.length - 1} more` : '') : '';
+        const sub = dc.direction === 'out'
+          ? `out to ${esc(dc.party || '')}${dc.note ? ` &middot; ${esc(dc.note)}` : ''}`
+          : `${dc.note ? esc(dc.note) : (dc.party ? esc(dc.party) : '')}`;
+        return `
+          <a class="activity-row" href="/dc.html?id=${dc.id}" target="_blank" rel="noopener">
+            <div class="ar-dc">
+              <span class="ar-dir ${dc.direction}">${dc.direction === 'in' ? '&#8595;' : '&#8593;'}</span>
+              <span class="ar-no">${esc(dc.dc_no)}</span>
+            </div>
+            <div style="flex:0 0 110px;"><span class="loc-pill ${dc.location_name === 'Fabrication' ? 'fab' : 'finished'}">${esc(dc.location_name || '')}</span></div>
+            <div class="ar-main">
+              <div class="ar-item">${itemsLabel}</div>
+              <div class="ar-sub">${sub}</div>
+            </div>
+            <div style="flex:0 0 130px; font-size:12.5px; color:var(--ink-4);">${esc(dc.created_by_name || 'Unknown')}${dc.edit_count ? ' <span style="color:var(--accent);">&middot; edited</span>' : ''}</div>
+            <div class="ar-value">${JKFmt.money(dc.total_value)}</div>
+            <div class="ar-when">${JKFmt.dateTime(dc.created_at)}</div>
+          </a>
+        `;
+      }).join('');
     }
 
-    async function refreshItems() {
-      const leaves = await loadItemsFor(locSel.value);
-      const itemSel = el.querySelector('#book-item');
-      itemSel.innerHTML = leaves.map((n) => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
-      itemSel.onchange = () => loadBook(locSel.value, itemSel.value, leaves);
-      if (leaves.length) loadBook(locSel.value, leaves[0].id, leaves);
+    el.querySelector('#dcs-loc').onchange = (e) => { dcsFilters.location = e.target.value; load(); };
+    el.querySelector('#dcs-from').onchange = (e) => { dcsFilters.from = e.target.value; load(); };
+    el.querySelector('#dcs-to').onchange = (e) => { dcsFilters.to = e.target.value; load(); };
+    el.querySelector('#dcs-search').oninput = debounce((e) => { dcsFilters.search = e.target.value; load(); }, 150);
+    el.querySelectorAll('#dcs-filter button').forEach((b) => {
+      b.onclick = () => {
+        dcsFilters.direction = b.dataset.val;
+        el.querySelectorAll('#dcs-filter button').forEach((x) => x.classList.toggle('active', x === b));
+        load();
+      };
+    });
+    el.querySelector('#dcs-export').onclick = async (e) => {
+      const btn = e.target;
+      btn.disabled = true; btn.textContent = 'Exporting…';
+      try {
+        await window.JKApi.exportDcs({
+          location: dcsFilters.location || undefined,
+          direction: dcsFilters.direction !== 'all' ? dcsFilters.direction : undefined,
+          from: dcsFilters.from || undefined,
+          to: dcsFilters.to ? dcsFilters.to + 'T23:59:59' : undefined,
+        });
+      } catch (err) {
+        JKToast.error(err.message);
+      }
+      btn.disabled = false; btn.textContent = 'Export CSV';
+    };
+
+    await load();
+  }
+
+  // ---------------------------------------------------------------
+  // Edit Log — every correction made to any DC, across both locations, in
+  // one place, newest first — so admin doesn't have to open each DC one at
+  // a time to see whether/how it was edited. Each row links to that DC's
+  // document page, where the same edit also shows in its own history panel.
+  // ---------------------------------------------------------------
+  let editLogFilters = { location: '', direction: 'all', from: '', to: '' };
+
+  async function renderEditLog(el) {
+    document.getElementById('ctx-title').textContent = 'Edit Log';
+    el.innerHTML = `
+      <div class="section-head"><h2>Edit Log</h2><div class="meta">Every correction made to any DC, across both locations — who made it, when, whether it moved stock, and what changed.</div></div>
+      <div class="activity-panel">
+        <div class="activity-panel-head">
+          <div class="title">All edits</div>
+          <div class="meta" id="editlog-count"></div>
+          <div class="spacer"></div>
+          <select id="editlog-loc" class="btn" style="font-weight:600;">
+            <option value="">All locations</option>
+            ${state.locations.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}
+          </select>
+          <label style="display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--ink-4); font-weight:600;">From
+            <input type="date" id="editlog-from" style="height:32px;" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--ink-4); font-weight:600;">To
+            <input type="date" id="editlog-to" style="height:32px;" />
+          </label>
+          <div class="seg" id="editlog-filter">
+            <button data-val="all" class="active">All</button>
+            <button data-val="in">Input</button>
+            <button data-val="out">Output</button>
+          </div>
+        </div>
+        <div id="editlog-list"><div class="loading-state">Loading…</div></div>
+      </div>
+    `;
+
+    el.querySelector('#editlog-loc').value = editLogFilters.location;
+    el.querySelector('#editlog-from').value = editLogFilters.from;
+    el.querySelector('#editlog-to').value = editLogFilters.to;
+    el.querySelectorAll('#editlog-filter button').forEach((b) => b.classList.toggle('active', b.dataset.val === editLogFilters.direction));
+
+    async function load() {
+      const listEl = el.querySelector('#editlog-list');
+      const countEl = el.querySelector('#editlog-count');
+      listEl.innerHTML = `<div class="loading-state">Loading…</div>`;
+      let edits;
+      try {
+        ({ edits } = await window.JKApi.dcEdits({
+          location: editLogFilters.location || undefined,
+          direction: editLogFilters.direction !== 'all' ? editLogFilters.direction : undefined,
+          from: editLogFilters.from || undefined,
+          to: editLogFilters.to ? editLogFilters.to + 'T23:59:59' : undefined,
+        }));
+      } catch (err) {
+        listEl.innerHTML = `<div class="empty-state">Could not load the edit log — ${esc(err.message)}</div>`;
+        return;
+      }
+      countEl.textContent = `${JKFmt.qty(edits.length)} edit${edits.length === 1 ? '' : 's'}`;
+      if (!edits.length) { listEl.innerHTML = `<div class="empty-state">No edits recorded yet.</div>`; return; }
+      listEl.innerHTML = edits.map((e) => `
+        <a class="dc-history-row" href="/dc.html?id=${e.dc_id}" target="_blank" rel="noopener" style="display:block; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid var(--rule-3); cursor:pointer; padding:12px 4px; color:inherit; text-decoration:none;">
+          <span class="loc-pill ${e.location_name === 'Fabrication' ? 'fab' : 'finished'}">${esc(e.location_name || '')}</span>
+          <span class="who">${esc(e.dc_no || '')}</span> &middot;
+          <span class="who">${esc(e.edited_by_name || 'Unknown')}</span> &middot;
+          ${JKFmt.dateTime(e.edited_at)} &middot;
+          <span class="flag ${e.affected_stock ? 'stock' : 'no-stock'}">${e.affected_stock ? 'affected stock' : 'record only'}</span>
+          <div style="color:var(--ink-4); margin-top:3px;">${diffSummary(e.before_snapshot, e.after_snapshot)}</div>
+        </a>
+      `).join('');
     }
-    locSel.onchange = refreshItems;
-    await refreshItems();
+
+    el.querySelector('#editlog-loc').onchange = (e) => { editLogFilters.location = e.target.value; load(); };
+    el.querySelector('#editlog-from').onchange = (e) => { editLogFilters.from = e.target.value; load(); };
+    el.querySelector('#editlog-to').onchange = (e) => { editLogFilters.to = e.target.value; load(); };
+    el.querySelectorAll('#editlog-filter button').forEach((b) => {
+      b.onclick = () => {
+        editLogFilters.direction = b.dataset.val;
+        el.querySelectorAll('#editlog-filter button').forEach((x) => x.classList.toggle('active', x === b));
+        load();
+      };
+    });
+
+    await load();
+  }
+
+  // Same before/after diff renderer used on the DC document page's own
+  // history panel (public/js/dc-view.js) — duplicated here in miniature
+  // rather than shared, since the two files load independently and neither
+  // is a build step away from the other.
+  function diffSummary(before, after) {
+    const parts = [];
+    ['party', 'vehicle_no', 'address', 'note'].forEach((k) => {
+      if ((before[k] || '') !== (after[k] || '')) parts.push(`${k.replace('_', ' ')}: "${esc(before[k] || '')}" &rarr; "${esc(after[k] || '')}"`);
+    });
+    const beforeById = new Map((before.lines || []).map((l) => [l.item_id, l]));
+    const afterById = new Map((after.lines || []).map((l) => [l.item_id, l]));
+    const ids = new Set([...beforeById.keys(), ...afterById.keys()]);
+    ids.forEach((id) => {
+      const b = beforeById.get(id);
+      const a = afterById.get(id);
+      if (b && a && Number(b.qty) !== Number(a.qty)) parts.push(`${esc(a.item_name)}: ${JKFmt.qty(b.qty)} &rarr; ${JKFmt.qty(a.qty)} ${esc(a.unit)}`);
+      else if (b && !a) parts.push(`${esc(b.item_name)}: removed`);
+      else if (a && !b) parts.push(`${esc(a.item_name)}: added (${JKFmt.qty(a.qty)} ${esc(a.unit)})`);
+    });
+    return parts.length ? parts.join(' &middot; ') : 'No field or quantity changes.';
   }
 
   // ---------------------------------------------------------------
@@ -495,7 +996,7 @@
   let priceNodeById = new Map();
 
   async function renderPrices(el) {
-    document.getElementById('ctx-title').textContent = 'Prices';
+    document.getElementById('ctx-title').textContent = 'Universal prices';
     el.innerHTML = `
       <div class="price-intro">
         <div>
@@ -700,7 +1201,7 @@
           <button class="btn-more" data-act="more" data-id="${node.id}" data-loc="${locId}" title="More actions">&#8230;</button>
         </div>
       </div>
-      ${state.openActionId === node.id ? renderActionPanel(node, locId, isLeaf) : ''}
+      ${state.openActionId === node.id ? renderActionPanel(node, locId, isLeaf, depth) : ''}
     `);
     if (!isLeaf && expanded) {
       const childChain = depth === 0 ? [] : [isLast].concat(parentChain);
@@ -708,16 +1209,26 @@
     }
   }
 
-  function renderActionPanel(node, locId, isLeaf) {
+  // Mockup-exact: an uppercase name label, then the row's own actions in
+  // the mockup's order (Rename first; a category gets "+ Sub-category" and
+  // "+ Item" as two distinct buttons rather than one "+ Sub-item" with a
+  // checkbox; a leaf gets Change price / Low-stock alert), Re-parent, then
+  // Archive. "Make into category" is appended last — it has no mockup
+  // equivalent, it exists only to recover an item that was mismarked as a
+  // leaf before the is_leaf fix.
+  function renderActionPanel(node, locId, isLeaf, depth) {
+    const padLeft = 31 + 20 * (depth || 0);
     return `
-      <div class="item-action-panel">
-        ${!isLeaf ? `<button class="btn btn-sm" data-act="add-child" data-id="${node.id}">+ Sub-item</button>` : ''}
+      <div class="item-action-panel" style="padding-left:${padLeft}px;">
+        <span class="item-action-label">${esc(node.name)}</span>
         <button class="btn btn-sm" data-act="rename" data-id="${node.id}" data-name="${esc(node.name)}">Rename</button>
+        ${!isLeaf ? `<button class="btn btn-sm" data-act="add-subcategory" data-id="${node.id}" data-name="${esc(node.name)}" data-loc="${locId}">+ Sub-category</button>` : ''}
+        ${!isLeaf ? `<button class="btn btn-sm" data-act="add-item" data-id="${node.id}" data-name="${esc(node.name)}" data-loc="${locId}">+ Item</button>` : ''}
         ${isLeaf ? `<button class="btn btn-sm" data-act="price" data-id="${node.id}" data-price="${node.price ?? ''}">Change price</button>` : ''}
         ${isLeaf ? `<button class="btn btn-sm" data-act="threshold" data-id="${node.id}" data-loc="${locId}">Low-stock alert</button>` : ''}
         <button class="btn btn-sm" data-act="reparent" data-id="${node.id}" data-loc="${locId}">Re-parent</button>
-        <span style="flex:1 1 auto;"></span>
         <button class="btn btn-sm btn-danger" data-act="archive" data-id="${node.id}">Archive</button>
+        ${isLeaf ? `<button class="btn btn-sm" data-act="to-category" data-id="${node.id}">Make into category</button>` : ''}
       </div>
     `;
   }
@@ -737,8 +1248,11 @@
         renderTreesSections();
       };
     });
-    wrap.querySelectorAll('[data-act="add-child"]').forEach((btn) => {
-      btn.onclick = () => { state.openActionId = null; openItemForm(btn.dataset.id, null, () => renderTrees(document.getElementById('view-root'))); };
+    wrap.querySelectorAll('[data-act="add-subcategory"]').forEach((btn) => {
+      btn.onclick = () => { state.openActionId = null; openItemForm(btn.dataset.id, btn.dataset.loc, () => renderTrees(document.getElementById('view-root')), false, btn.dataset.name); };
+    });
+    wrap.querySelectorAll('[data-act="add-item"]').forEach((btn) => {
+      btn.onclick = () => { state.openActionId = null; openItemForm(btn.dataset.id, btn.dataset.loc, () => renderTrees(document.getElementById('view-root')), true, btn.dataset.name); };
     });
     wrap.querySelectorAll('[data-act="rename"]').forEach((btn) => {
       btn.onclick = async () => {
@@ -780,6 +1294,17 @@
         } catch (err) { JKToast.error(err.message); }
       };
     });
+    wrap.querySelectorAll('[data-act="to-category"]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm('Turn this into a category? It will stop holding stock directly — you\'ll add sub-items under it instead.')) return;
+        try {
+          await window.JKApi.updateItem(btn.dataset.id, { is_leaf: false });
+          JKToast.good('Now a category.');
+          state.openActionId = null;
+          renderTrees(document.getElementById('view-root'));
+        } catch (err) { JKToast.error(err.message); }
+      };
+    });
     wrap.querySelectorAll('[data-act="reparent"]').forEach((btn) => {
       btn.onclick = () => openReparentModal(btn.dataset.id, btn.dataset.loc);
     });
@@ -796,17 +1321,38 @@
     });
   }
 
-  function openItemForm(parentId, locId, onDone) {
-    openModal(parentId ? 'Add sub-item' : 'Add top-level category', `
-      <div class="field"><label>Name</label><input id="f-name" /></div>
-      <div class="field"><label>Unit</label><input id="f-unit" placeholder="e.g. sheets, pieces, sets, kg" value="pcs" /></div>
+  // A top-level node is always a category (server forces is_leaf: false).
+  // For a sub-node, the mockup's two distinct buttons ("+ Sub-category" vs
+  // "+ Item") decide is_leaf directly via forceLeaf — no checkbox needed.
+  //
+  // Modal chrome (title/subtitle/hint-box pattern) replicated one-to-one
+  // from the mockup's "New category" dialog (Item trees, Fabrication,
+  // "+ Top-level category" and "+ Sub-category"). The mockup reuses that
+  // same dialog for "+ Item" too (it's a non-functional demo, no Unit
+  // field either way) — here "New item" gets its own title plus the Unit
+  // field our schema actually needs, since a real leaf item has to record
+  // a unit; the category copy/hint-box otherwise matches the mockup exactly.
+  function openItemForm(parentId, locId, onDone, forceLeaf, parentName) {
+    const isItem = !!parentId && !!forceLeaf;
+    const locName = (state.locations.find((l) => l.id === locId) || {}).name || '';
+    const kindLabel = state.kind === 'consumable' ? 'consumables' : 'materials';
+    const subtitle = !parentId
+      ? `${locName} · top level · ${kindLabel}`
+      : `${locName} · inside ${parentName || ''}`;
+    const title = isItem ? 'New item' : 'New category';
+
+    openModal(title, `
+      <div class="field"><label>${isItem ? 'Item name' : 'Category name'}</label><input id="f-name" placeholder="e.g. Steel sheets" /></div>
+      ${isItem ? `<div class="field"><label>Unit</label><input id="f-unit" placeholder="e.g. sheets, pieces, sets, kg" value="pcs" /></div>` : ''}
+      ${!isItem ? `<div class="modal-hint">A category holds no stock of its own. Its number is always the sum of the items nested under it.</div>` : ''}
       <div class="field error hidden" id="f-error"></div>
     `, [
       { label: 'Cancel', onClick: () => closeModal() },
       {
-        label: 'Create', primary: true, onClick: async (btn) => {
+        label: 'Add', primary: true, onClick: async (btn) => {
           const name = document.getElementById('f-name').value.trim();
-          const unit = document.getElementById('f-unit').value.trim() || 'pcs';
+          const unitEl = document.getElementById('f-unit');
+          const unit = (unitEl ? unitEl.value.trim() : '') || 'pcs';
           const errorEl = document.getElementById('f-error');
           if (!name) { errorEl.textContent = 'Name is required.'; errorEl.classList.remove('hidden'); return; }
           btn.disabled = true;
@@ -815,6 +1361,7 @@
               name, unit, kind: state.kind,
               parent_id: parentId || undefined,
               location_id: parentId ? undefined : locId,
+              is_leaf: parentId ? !!forceLeaf : undefined,
             });
             closeModal();
             JKToast.good('Created.');
@@ -824,19 +1371,23 @@
           }
         },
       },
-    ]);
+    ], { subtitle });
   }
 
   // Re-parent: a leaf/category can only move within its own location's
   // tree (a leaf can't cross locations — the DB trigger rejects that
   // anyway), so the select is scoped to that location's own categories.
+  // The item itself, and everything nested under it, is excluded from the
+  // list of valid destinations — moving a category under its own
+  // descendant would create a cycle.
   function openReparentModal(itemId, locId) {
     const section = treesData.find((t) => t.loc.id === locId);
     const options = [];
     (function walk(nodes, path) {
       (nodes || []).forEach((n) => {
+        if (n.id === itemId) return; // skip it and everything below it
         if (!n.isLeaf) {
-          if (n.id !== itemId) options.push({ id: n.id, label: path.concat(n.name).join(' › ') });
+          options.push({ id: n.id, label: path.concat(n.name).join(' › ') });
           walk(n.children, path.concat(n.name));
         }
       });
@@ -873,38 +1424,146 @@
   }
 
   // ---------------------------------------------------------------
-  // DC document view
+  // Users — admin can provision new logins (no mockup screen for this;
+  // built to match the app's own design system: the book-list chrome for
+  // the list, the shared openModal helper for the create/reset forms).
   // ---------------------------------------------------------------
-  async function openDcDocument(dcId) {
-    const { dc } = await window.JKApi.dc(dcId);
-    const locName = state.locations.find((l) => l.id === dc.location_id)?.name || '';
-    openModal(`DC ${dc.dc_no}`, `
-      <div class="doc-sheet" style="padding:24px; border:none;">
-        <div class="doc-head">
-          <div>
-            <div style="font-size:20px; font-weight:800;">${esc(dc.dc_no)}</div>
-            <div style="color:var(--ink-4); font-size:13px; margin-top:4px;">${dc.direction === 'in' ? 'Input DC' : 'Output DC'} &middot; ${esc(locName)}</div>
+  async function renderUsers(el) {
+    document.getElementById('ctx-title').textContent = 'Users';
+    el.innerHTML = `
+      <div class="book-list" id="users-card">
+        <div class="book-card-head">
+          <div class="titles">
+            <div class="h">Logins</div>
+            <div class="sub" id="users-meta">Loading…</div>
           </div>
-          <div style="text-align:right;">
-            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); font-weight:600;">Date</div>
-            <div style="font-weight:600; margin-top:2px;">${JKFmt.dateTime(dc.created_at)}</div>
-          </div>
+          <button class="btn btn-primary" id="btn-add-user">+ Add user</button>
         </div>
-        <div style="display:flex; flex-wrap:wrap; gap:20px; margin-bottom:18px;">
-          <div><div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); font-weight:600;">Party</div><div style="font-weight:600; margin-top:3px;">${esc(dc.party)}</div></div>
-          ${dc.vehicle_no ? `<div><div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); font-weight:600;">Vehicle</div><div style="font-weight:600; margin-top:3px;">${esc(dc.vehicle_no)}</div></div>` : ''}
-          ${dc.address ? `<div><div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); font-weight:600;">Address</div><div style="font-weight:600; margin-top:3px;">${esc(dc.address)}</div></div>` : ''}
-          ${dc.note ? `<div><div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); font-weight:600;">Note</div><div style="font-weight:600; margin-top:3px;">${esc(dc.note)}</div></div>` : ''}
-        </div>
-        <table>
-          <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Value</th></tr></thead>
-          <tbody>
-            ${dc.lines.map((l) => `<tr><td>${esc(l.item_name)}</td><td class="num">${JKFmt.qty(l.qty)} ${esc(l.unit)}</td><td class="num">${JKFmt.money(l.price)}</td><td class="num">${JKFmt.money(l.value)}</td></tr>`).join('')}
-          </tbody>
-        </table>
-        <div style="text-align:right; font-weight:800; font-size:16px;">Total: ${JKFmt.money(dc.total_value)}</div>
+        <div id="users-rows"><div class="loading-state">Loading…</div></div>
       </div>
-    `, [{ label: 'Close', primary: true, onClick: () => closeModal() }], { wide: true });
+    `;
+    el.querySelector('#btn-add-user').onclick = () => openUserForm();
+
+    let users;
+    try {
+      ({ users } = await window.JKApi.users());
+    } catch (err) {
+      el.querySelector('#users-rows').innerHTML = `<div class="empty-state">Could not load users — ${esc(err.message)}</div>`;
+      return;
+    }
+
+    el.querySelector('#users-meta').textContent = `${JKFmt.qty(users.length)} login${users.length === 1 ? '' : 's'}`;
+
+    const rowsEl = el.querySelector('#users-rows');
+    if (!users.length) {
+      rowsEl.innerHTML = `<div class="empty-state">No logins yet.</div>`;
+      return;
+    }
+    rowsEl.innerHTML = users.map((u) => `
+      <div class="user-row" data-id="${u.id}">
+        <span class="user-row-main">
+          <span class="item-name">${esc(u.full_name)}</span>
+          <span class="item-crumb">${esc(u.email || '')}</span>
+        </span>
+        <span class="loc-pill ${u.role === 'admin' ? '' : (u.location_name === 'Fabrication' ? 'fab' : 'finished')}">${u.role === 'admin' ? 'Admin' : esc(u.location_name || '—')}</span>
+        <span class="user-row-actions">
+          <button class="btn btn-sm" data-act="reset-password" data-id="${u.id}" data-name="${esc(u.full_name)}">Reset password</button>
+          <button class="btn btn-sm btn-danger" data-act="remove-user" data-id="${u.id}" data-name="${esc(u.full_name)}">Remove</button>
+        </span>
+      </div>
+    `).join('');
+
+    rowsEl.querySelectorAll('[data-act="reset-password"]').forEach((btn) => {
+      btn.onclick = () => openResetPasswordForm(btn.dataset.id, btn.dataset.name);
+    });
+    rowsEl.querySelectorAll('[data-act="remove-user"]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm(`Remove ${btn.dataset.name}'s login? They will no longer be able to sign in.`)) return;
+        try {
+          await window.JKApi.deleteUser(btn.dataset.id);
+          JKToast.good('Login removed.');
+          renderUsers(document.getElementById('view-root'));
+        } catch (err) { JKToast.error(err.message); }
+      };
+    });
+  }
+
+  function openUserForm() {
+    openModal('Add user', `
+      <div class="field"><label>Full name</label><input id="f-name" /></div>
+      <div class="field"><label>Email</label><input id="f-email" type="email" autocomplete="off" /></div>
+      <div class="field"><label>Password</label><input id="f-password" type="password" autocomplete="new-password" placeholder="At least 8 characters" /></div>
+      <div class="field">
+        <label>Role</label>
+        <select id="f-role">
+          <option value="operator">Operator (pinned to one location)</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="field" id="f-location-field">
+        <label>Location</label>
+        <select id="f-location">
+          ${state.locations.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field error hidden" id="f-error"></div>
+    `, [
+      { label: 'Cancel', onClick: () => closeModal() },
+      {
+        label: 'Create login', primary: true, onClick: async (btn) => {
+          const full_name = document.getElementById('f-name').value.trim();
+          const email = document.getElementById('f-email').value.trim();
+          const password = document.getElementById('f-password').value;
+          const role = document.getElementById('f-role').value;
+          const location_id = document.getElementById('f-location').value;
+          const errorEl = document.getElementById('f-error');
+          if (!full_name || !email || !password) {
+            errorEl.textContent = 'Name, email and password are all required.'; errorEl.classList.remove('hidden'); return;
+          }
+          btn.disabled = true;
+          try {
+            await window.JKApi.createUser({
+              full_name, email, password, role,
+              location_id: role === 'operator' ? location_id : undefined,
+            });
+            closeModal();
+            JKToast.good('Login created.');
+            renderUsers(document.getElementById('view-root'));
+          } catch (err) {
+            errorEl.textContent = err.message; errorEl.classList.remove('hidden'); btn.disabled = false;
+          }
+        },
+      },
+    ]);
+    const roleEl = document.getElementById('f-role');
+    const locField = document.getElementById('f-location-field');
+    const syncLocField = () => { locField.style.display = roleEl.value === 'operator' ? '' : 'none'; };
+    roleEl.onchange = syncLocField;
+    syncLocField();
+  }
+
+  function openResetPasswordForm(userId, name) {
+    openModal(`Reset password — ${name}`, `
+      <div class="field"><label>New password</label><input id="f-password" type="password" autocomplete="new-password" placeholder="At least 8 characters" /></div>
+      <div class="field error hidden" id="f-error"></div>
+    `, [
+      { label: 'Cancel', onClick: () => closeModal() },
+      {
+        label: 'Reset password', primary: true, onClick: async (btn) => {
+          const password = document.getElementById('f-password').value;
+          const errorEl = document.getElementById('f-error');
+          if (!password) { errorEl.textContent = 'Enter a new password.'; errorEl.classList.remove('hidden'); return; }
+          btn.disabled = true;
+          try {
+            await window.JKApi.updateUser(userId, { password });
+            closeModal();
+            JKToast.good('Password reset.');
+          } catch (err) {
+            errorEl.textContent = err.message; errorEl.classList.remove('hidden'); btn.disabled = false;
+          }
+        },
+      },
+    ]);
   }
 
   // ---------------------------------------------------------------
@@ -917,7 +1576,10 @@
     scrim.id = 'active-modal';
     scrim.innerHTML = `
       <div class="modal${opts && opts.wide ? ' wide' : ''}">
-        <div class="modal-head"><div class="title">${esc(title)}</div><button class="btn btn-ghost icon" id="modal-close">&times;</button></div>
+        <div class="modal-head">
+          <div class="modal-head-text"><div class="title">${esc(title)}</div>${opts && opts.subtitle ? `<div class="subtitle">${esc(opts.subtitle)}</div>` : ''}</div>
+          <button class="btn btn-ghost icon" id="modal-close">&times;</button>
+        </div>
         <div class="modal-body">${bodyHtml}</div>
         <div class="modal-foot">${buttons.map((b, i) => `<button class="btn ${b.primary ? 'btn-primary' : ''}" data-i="${i}">${esc(b.label)}</button>`).join('')}</div>
       </div>
