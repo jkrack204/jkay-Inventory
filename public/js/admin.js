@@ -709,7 +709,7 @@
     const totalIn = book.entries.filter((e) => e.direction === 'in').reduce((s, e) => s + Number(e.qty), 0);
     const totalOut = book.entries.filter((e) => e.direction === 'out').reduce((s, e) => s + Number(e.qty), 0);
     const rows = book.entries.slice().reverse().map((e) => `
-      <div class="bookov-row">
+      <a class="bookov-row" href="/dc.html?id=${e.dc_id}" target="_blank" rel="noopener">
         <span class="c-date">${JKFmt.date(e.created_at)}</span>
         <span class="c-dcno">
           <span class="dc-badge ${e.direction}">${e.direction === 'in' ? '&#8595;' : '&#8593;'}</span>
@@ -722,7 +722,7 @@
         <span class="c-in">${e.direction === 'in' ? JKFmt.qty(e.qty) : '&mdash;'}</span>
         <span class="c-out">${e.direction === 'out' ? JKFmt.qty(e.qty) : '&mdash;'}</span>
         <span class="c-bal">${JKFmt.qty(e.balance)}</span>
-      </div>
+      </a>
     `).join('');
 
     overlay.querySelector('#bookov-card').innerHTML = `
