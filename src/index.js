@@ -85,14 +85,19 @@ app.get('/config.js', (req, res) => {
 
 // Single Railway service: Express serves the static frontend too, so
 // there's one deploy, one URL, one process — see JKAY_Inventory_Build_Plan.md §2.
-// 1-day cache on static assets (JS/CSS/logo/etc.) — they only change on a
-// new deploy, so repeat visits skip re-downloading them. HTML files are
-// excluded (maxAge doesn't apply to the catch-all sendFile below anyway,
-// but setHeaders guards index.html too in case a browser requests it by name).
+//
+// Caching: JS/CSS/HTML are always revalidated ('no-cache' — the browser
+// still caches the file, but must check with the server on every load;
+// unchanged files come back as a fast, bodyless 304, changed ones re-download).
+// This is what makes a new deploy show up on next page load instead of
+// silently running stale code for up to a day. Images/fonts/icons rarely
+// change and aren't code, so they keep a long cache for speed.
 app.use(express.static(path.join(__dirname, '..', 'public'), {
   maxAge: '1d',
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
   },
 }));
 app.get('*', (req, res, next) => {
