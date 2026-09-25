@@ -16,18 +16,21 @@ router.get('/out-of-stock', async (req, res, next) => {
       .from('items')
       .select('id, name, unit, kind, location_id')
       .eq('is_active', true);
-    const { data: items, error: itemsError } = await itemsQuery;
-    if (itemsError) return res.status(400).json({ error: itemsError.message });
 
     let locQuery = supabaseAdmin.schema('inventory').from('locations').select('id, name').eq('is_active', true);
     if (locationId) locQuery = locQuery.eq('id', locationId);
-    const { data: locations, error: locError } = await locQuery;
-    if (locError) return res.status(400).json({ error: locError.message });
 
-    const { data: stockRows, error: stockError } = await supabaseAdmin
-      .schema('inventory')
-      .from('stock')
-      .select('item_id, location_id, qty');
+    const stockQuery = supabaseAdmin.schema('inventory').from('stock').select('item_id, location_id, qty');
+
+    // items / locations / stock don't depend on each other — fire them
+    // together instead of round-tripping to Supabase 3 times in a row.
+    const [
+      { data: items, error: itemsError },
+      { data: locations, error: locError },
+      { data: stockRows, error: stockError },
+    ] = await Promise.all([itemsQuery, locQuery, stockQuery]);
+    if (itemsError) return res.status(400).json({ error: itemsError.message });
+    if (locError) return res.status(400).json({ error: locError.message });
     if (stockError) return res.status(400).json({ error: stockError.message });
 
     // A leaf is any item id that appears in `stock` at all (parents never
@@ -69,19 +72,15 @@ router.get('/low-stock', async (req, res, next) => {
     if (!thresholds.length) return res.json({ low_stock: [] });
 
     const itemIds = thresholds.map((t) => t.item_id);
-    const { data: stockRows, error: stockError } = await supabaseAdmin
-      .schema('inventory')
-      .from('stock')
-      .select('item_id, qty')
-      .eq('location_id', locationId)
-      .in('item_id', itemIds);
+    // stock and items both only need itemIds, not each other — parallel.
+    const [
+      { data: stockRows, error: stockError },
+      { data: items, error: itemsError },
+    ] = await Promise.all([
+      supabaseAdmin.schema('inventory').from('stock').select('item_id, qty').eq('location_id', locationId).in('item_id', itemIds),
+      supabaseAdmin.schema('inventory').from('items').select('id, name, unit').in('id', itemIds),
+    ]);
     if (stockError) return res.status(400).json({ error: stockError.message });
-
-    const { data: items, error: itemsError } = await supabaseAdmin
-      .schema('inventory')
-      .from('items')
-      .select('id, name, unit')
-      .in('id', itemIds);
     if (itemsError) return res.status(400).json({ error: itemsError.message });
 
     const itemById = new Map(items.map((i) => [i.id, i]));
@@ -131,19 +130,19 @@ router.get('/valuation', requireAdmin, async (req, res, next) => {
 
     let locQuery = supabaseAdmin.schema('inventory').from('locations').select('id, name').eq('is_active', true);
     if (location) locQuery = locQuery.eq('id', location);
-    const { data: locations, error: locError } = await locQuery;
+
+    // locations / stock / prices are independent — fire together.
+    const [
+      { data: locations, error: locError },
+      { data: stockRows, error: stockError },
+      { data: prices, error: priceError },
+    ] = await Promise.all([
+      locQuery,
+      supabaseAdmin.schema('inventory').from('stock').select('item_id, location_id, qty'),
+      supabaseAdmin.schema('inventory').from('item_prices').select('item_id, price'),
+    ]);
     if (locError) return res.status(400).json({ error: locError.message });
-
-    const { data: stockRows, error: stockError } = await supabaseAdmin
-      .schema('inventory')
-      .from('stock')
-      .select('item_id, location_id, qty');
     if (stockError) return res.status(400).json({ error: stockError.message });
-
-    const { data: prices, error: priceError } = await supabaseAdmin
-      .schema('inventory')
-      .from('item_prices')
-      .select('item_id, price');
     if (priceError) return res.status(400).json({ error: priceError.message });
 
     const priceByItem = new Map(prices.map((p) => [p.item_id, Number(p.price)]));
@@ -189,9 +188,6 @@ router.get('/inventory-books', async (req, res, next) => {
     if (from) query = query.gte('dcs.created_at', from);
     if (to) query = query.lte('dcs.created_at', to);
 
-    const { data: rows, error } = await query;
-    if (error) return res.status(400).json({ error: error.message });
-
     // Opening balance = current stock minus every movement from the start
     // of the window up to *now* — not up to `to`. Walking backward from
     // today's actual stock only cancels out correctly over that full span;
@@ -207,16 +203,24 @@ router.get('/inventory-books', async (req, res, next) => {
       .eq('item_id', item_id)
       .eq('dcs.location_id', locationId);
     if (from) openingQuery = openingQuery.gte('dcs.created_at', from);
-    const { data: openingRows, error: openingError } = await openingQuery;
-    if (openingError) return res.status(400).json({ error: openingError.message });
 
-    const { data: stockRow } = await supabaseAdmin
+    const stockQuery = supabaseAdmin
       .schema('inventory')
       .from('stock')
       .select('qty')
       .eq('item_id', item_id)
       .eq('location_id', locationId)
       .maybeSingle();
+
+    // The ledger rows, the opening-balance net, and the current stock row
+    // don't depend on each other — fire all three together.
+    const [
+      { data: rows, error },
+      { data: openingRows, error: openingError },
+      { data: stockRow },
+    ] = await Promise.all([query, openingQuery, stockQuery]);
+    if (error) return res.status(400).json({ error: error.message });
+    if (openingError) return res.status(400).json({ error: openingError.message });
 
     const currentQty = Number(stockRow?.qty ?? 0);
     const netSinceFrom = openingRows.reduce((s, r) => s + (r.dcs.direction === 'in' ? Number(r.qty) : -Number(r.qty)), 0);

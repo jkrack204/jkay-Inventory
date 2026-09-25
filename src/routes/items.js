@@ -32,12 +32,19 @@ async function buildTree({ kind, locationIds, includePrice }) {
   let priceByItem = {};
 
   if (ids.length) {
-    const { data: stockRows, error: stockError } = await supabaseAdmin
-      .schema('inventory')
-      .from('stock')
-      .select('item_id, location_id, qty')
-      .in('item_id', ids);
+    // stock and price rows both only depend on `ids`, not on each other —
+    // fire them together instead of one after the other.
+    const stockQuery = supabaseAdmin.schema('inventory').from('stock').select('item_id, location_id, qty').in('item_id', ids);
+    const priceQuery = includePrice
+      ? supabaseAdmin.schema('inventory').from('item_prices').select('item_id, price').in('item_id', ids)
+      : Promise.resolve({ data: [], error: null });
+
+    const [{ data: stockRows, error: stockError }, { data: priceRows, error: priceError }] = await Promise.all([
+      stockQuery,
+      priceQuery,
+    ]);
     if (stockError) throw stockError;
+    if (priceError) throw priceError;
 
     for (const row of stockRows) {
       if (locationIds && !locationIds.includes(row.location_id)) continue;
@@ -47,12 +54,6 @@ async function buildTree({ kind, locationIds, includePrice }) {
     }
 
     if (includePrice) {
-      const { data: priceRows, error: priceError } = await supabaseAdmin
-        .schema('inventory')
-        .from('item_prices')
-        .select('item_id, price')
-        .in('item_id', ids);
-      if (priceError) throw priceError;
       for (const row of priceRows) priceByItem[row.item_id] = Number(row.price);
     }
   }
