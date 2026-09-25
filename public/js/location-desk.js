@@ -162,7 +162,7 @@
       const first = dc.lines[0];
       const extra = dc.lines.length - 1;
       return `
-        <a class="dc-row" href="/dc.html?id=${dc.id}" target="_blank" rel="noopener">
+        <a class="dc-row" href="/dc.html?id=${dc.id}" target="_blank">
           <div class="dc-dir ${dc.direction}">${dc.direction === 'in' ? '↓' : '↑'}</div>
           <div class="main">
             <div class="dc-line1"><b>${JKFmt.qty(first.qty)} ${escapeHtml(first.unit)}</b> ${escapeHtml(first.item_name)}${extra > 0 ? ` + ${extra} more` : ''}</div>
@@ -541,7 +541,7 @@
           : (dc.note ? escapeHtml(dc.note) : 'Recorded');
         const line2 = line2Base + (dc.created_by_name ? ` · by ${escapeHtml(dc.created_by_name)}` : '') + (dc.edit_count ? ' · <span style="color:var(--accent);">edited</span>' : '');
         return `
-        <a class="dc-row" href="/dc.html?id=${dc.id}" target="_blank" rel="noopener">
+        <a class="dc-row" href="/dc.html?id=${dc.id}" target="_blank">
           <div class="dc-dir ${dc.direction}">${dc.direction === 'in' ? '↓' : '↑'}</div>
           <div class="main">
             <div class="dc-line1">${line1}</div>

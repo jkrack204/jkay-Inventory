@@ -404,7 +404,7 @@
         const totalQty = dc.lines.reduce((s, l) => s + Number(l.qty), 0);
         const qtyLabel = dc.lines.length === 1 ? `${JKFmt.qty(dc.lines[0].qty)} ${esc(dc.lines[0].unit)}` : `${JKFmt.qty(totalQty)} units`;
         return `
-          <a class="activity-row" href="/dc.html?id=${dc.id}" target="_blank" rel="noopener">
+          <a class="activity-row" href="/dc.html?id=${dc.id}" target="_blank">
             <div class="ar-dc">
               <span class="ar-dir ${dc.direction}">${dc.direction === 'in' ? '&#8595;' : '&#8593;'}</span>
               <span class="ar-no">${esc(dc.dc_no)}</span>
@@ -709,7 +709,7 @@
     const totalIn = book.entries.filter((e) => e.direction === 'in').reduce((s, e) => s + Number(e.qty), 0);
     const totalOut = book.entries.filter((e) => e.direction === 'out').reduce((s, e) => s + Number(e.qty), 0);
     const rows = book.entries.slice().reverse().map((e) => `
-      <a class="bookov-row" href="/dc.html?id=${e.dc_id}" target="_blank" rel="noopener">
+      <a class="bookov-row" href="/dc.html?id=${e.dc_id}" target="_blank">
         <span class="c-date">${JKFmt.date(e.created_at)}</span>
         <span class="c-dcno">
           <span class="dc-badge ${e.direction}">${e.direction === 'in' ? '&#8595;' : '&#8593;'}</span>
@@ -831,7 +831,7 @@
           ? `out to ${esc(dc.party || '')}${dc.note ? ` &middot; ${esc(dc.note)}` : ''}`
           : `${dc.note ? esc(dc.note) : (dc.party ? esc(dc.party) : '')}`;
         return `
-          <a class="activity-row" href="/dc.html?id=${dc.id}" target="_blank" rel="noopener">
+          <a class="activity-row" href="/dc.html?id=${dc.id}" target="_blank">
             <div class="ar-dc">
               <span class="ar-dir ${dc.direction}">${dc.direction === 'in' ? '&#8595;' : '&#8593;'}</span>
               <span class="ar-no">${esc(dc.dc_no)}</span>
@@ -940,7 +940,7 @@
       countEl.textContent = `${JKFmt.qty(edits.length)} edit${edits.length === 1 ? '' : 's'}`;
       if (!edits.length) { listEl.innerHTML = `<div class="empty-state">No edits recorded yet.</div>`; return; }
       listEl.innerHTML = edits.map((e) => `
-        <a class="dc-history-row" href="/dc.html?id=${e.dc_id}" target="_blank" rel="noopener" style="display:block; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid var(--rule-3); cursor:pointer; padding:12px 4px; color:inherit; text-decoration:none;">
+        <a class="dc-history-row" href="/dc.html?id=${e.dc_id}" target="_blank" style="display:block; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid var(--rule-3); cursor:pointer; padding:12px 4px; color:inherit; text-decoration:none;">
           <span class="loc-pill ${e.location_name === 'Fabrication' ? 'fab' : 'finished'}">${esc(e.location_name || '')}</span>
           <span class="who">${esc(e.dc_no || '')}</span> &middot;
           <span class="who">${esc(e.edited_by_name || 'Unknown')}</span> &middot;
