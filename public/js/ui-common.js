@@ -193,11 +193,46 @@
     };
   }
 
+  // ---- Opening a DC in a new tab, without losing the session ----
+  // Auth is session-only (sessionStorage), which is NOT shared with a tab
+  // opened via a plain `<a target="_blank">` click — Chrome does not clone
+  // sessionStorage into it (this used to be blamed on rel="noopener", but
+  // it happens even without that: a link click just isn't script-driven
+  // the way window.open() is). window.open() DOES hand back a same-origin
+  // window reference before it navigates, so we can copy every
+  // sessionStorage key into it directly and only then send it to the real
+  // URL — the new tab has a logged-in session before its first request.
+  // If the popup is blocked, fall back to navigating in place.
+  function openInNewTab(url) {
+    const win = window.open('', '_blank');
+    if (!win) { window.location.href = url; return; }
+    try {
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        win.sessionStorage.setItem(key, sessionStorage.getItem(key));
+      }
+    } catch (e) { /* cross-origin or storage disabled — new tab just logs in fresh */ }
+    win.location.href = url;
+  }
+
+  // Delegated at the document level so every current and future
+  // target="_blank" link to dc.html is covered from one place, instead of
+  // repeating this at every call site that renders a DC row.
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('a[target="_blank"]');
+    if (!link) return;
+    const href = link.getAttribute('href') || '';
+    if (!href.startsWith('/dc.html')) return;
+    e.preventDefault();
+    openInNewTab(link.href);
+  });
+
   window.JKUi = {
     getPrefs: () => prefs,
     applyPrefs,
     logoMarkHtml,
     openSettingsModal,
     escapeHtml,
+    openInNewTab,
   };
 })();
