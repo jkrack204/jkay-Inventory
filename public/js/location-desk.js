@@ -189,7 +189,7 @@
           <button class="tab ${state.kind === 'material' ? 'active' : ''}" data-kind="material">Materials</button>
           <button class="tab ${state.kind === 'consumable' ? 'active' : ''}" data-kind="consumable">Consumables</button>
         </div>
-        <input class="search-input" id="peek-search" placeholder="Search items" value="${escapeHtml(state.peekSearch)}" />
+        <input autocomplete="off" class="search-input" id="peek-search" placeholder="Search items" value="${escapeHtml(state.peekSearch)}" />
       </div>
       <div class="tree-table">
         <div class="tree-head">
@@ -313,7 +313,7 @@
           <button class="tab ${state.kind === 'consumable' ? 'active' : ''}" data-kind="consumable">Consumables</button>
         </div>
         <div style="display:flex; gap:10px;">
-          <input class="search-input" id="search" placeholder="Search items" value="${escapeHtml(state.search)}" />
+          <input autocomplete="off" class="search-input" id="search" placeholder="Search items" value="${escapeHtml(state.search)}" />
           <button class="btn" id="btn-collapse">Collapse all</button>
         </div>
       </div>
@@ -501,7 +501,7 @@
             <span class="count" id="dc-count"></span>
           </div>
           <div class="spacer"></div>
-          <div class="search-pill">&#8981;<input id="dc-search" placeholder="Search DC no. / item / party" /></div>
+          <div class="search-pill">&#8981;<input autocomplete="off" id="dc-search" placeholder="Search DC no. / item / party" /></div>
           <div class="filter-seg" id="dc-filter">
             <button data-val="all" class="active">All</button>
             <button data-val="in">In</button>
@@ -581,7 +581,7 @@
         </div>
         <div class="field">
           <label>Alert when stock is at or below</label>
-          <input type="number" min="0" step="any" id="threshold-value" placeholder="e.g. 10" />
+          <input autocomplete="off" type="number" min="0" step="any" id="threshold-value" placeholder="e.g. 10" />
         </div>
         <button class="btn btn-primary" id="threshold-save">Save threshold</button>
       </div>
@@ -649,7 +649,7 @@
         <div class="book-toolbar">
           <div class="search-pill">
             <span class="glyph">&#8981;</span>
-            <input id="book-search" placeholder="Search any item" value="${escapeHtml(bookSearch)}" />
+            <input autocomplete="off" id="book-search" placeholder="Search any item" value="${escapeHtml(bookSearch)}" />
           </div>
         </div>
         <div id="book-rows"><div class="loading-state">Loading…</div></div>
@@ -905,7 +905,7 @@
 
     function renderItemStep() {
       return `
-        <input class="dcwiz-search" id="dcwiz-search" placeholder="Type to narrow the list" value="${escapeHtml(wiz.search)}" />
+        <input autocomplete="off" class="dcwiz-search" id="dcwiz-search" placeholder="Type to narrow the list" value="${escapeHtml(wiz.search)}" />
         <div class="dcwiz-tabs">
           <button type="button" class="dcwiz-tab ${wiz.kindTab === 'material' ? 'active' : ''}" data-kind="material">Materials</button>
           <button type="button" class="dcwiz-tab ${wiz.kindTab === 'consumable' ? 'active' : ''}" data-kind="consumable">Consumables</button>
@@ -991,20 +991,20 @@
         ${isIn ? `
           <div class="dcwiz-field">
             <label>Note — optional</label>
-            <input id="dcwiz-note" placeholder="Anything worth recording on this DC" value="${escapeHtml(wiz.note)}" />
+            <input autocomplete="off" id="dcwiz-note" placeholder="Anything worth recording on this DC" value="${escapeHtml(wiz.note)}" />
           </div>
         ` : `
           <div class="dcwiz-field">
             <label>Party name — who it is going to</label>
-            <input id="dcwiz-party" placeholder="Customer or party name" value="${escapeHtml(wiz.party)}" style="${wiz.party.trim() ? '' : 'border-color:var(--bad-border);'}" />
+            <input autocomplete="off" id="dcwiz-party" placeholder="Customer or party name" value="${escapeHtml(wiz.party)}" style="${wiz.party.trim() ? '' : 'border-color:var(--bad-border);'}" />
           </div>
           <div class="dcwiz-field">
             <label>Delivery address</label>
-            <input id="dcwiz-address" placeholder="Where the material is going" value="${escapeHtml(wiz.address)}" style="${wiz.address.trim() ? '' : 'border-color:var(--bad-border);'}" />
+            <input autocomplete="off" id="dcwiz-address" placeholder="Where the material is going" value="${escapeHtml(wiz.address)}" style="${wiz.address.trim() ? '' : 'border-color:var(--bad-border);'}" />
           </div>
           <div class="dcwiz-field">
             <label>Vehicle number</label>
-            <input id="dcwiz-vehicle" placeholder="e.g. HR 26 AT 4412" value="${escapeHtml(wiz.vehicle_no)}" style="text-transform:uppercase; letter-spacing:.04em; ${wiz.vehicle_no.trim() ? '' : 'border-color:var(--bad-border);'}" />
+            <input autocomplete="off" id="dcwiz-vehicle" placeholder="e.g. HR 26 AT 4412" value="${escapeHtml(wiz.vehicle_no)}" style="text-transform:uppercase; letter-spacing:.04em; ${wiz.vehicle_no.trim() ? '' : 'border-color:var(--bad-border);'}" />
           </div>
         `}
         <div class="dcwiz-hintbox">${escapeHtml(computeHint())}</div>

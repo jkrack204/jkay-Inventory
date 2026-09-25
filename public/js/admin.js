@@ -290,7 +290,7 @@
           <button class="tab ${state.kind === 'material' ? 'active' : ''}" data-kind="material">Materials</button>
           <button class="tab ${state.kind === 'consumable' ? 'active' : ''}" data-kind="consumable">Consumables</button>
         </div>
-        <input class="search-input" id="search" placeholder="Search items" />
+        <input autocomplete="off" class="search-input" id="search" placeholder="Search items" />
       </div>
       <div class="tree-table" style="margin-bottom:26px;">
         <div class="tree-head">
@@ -307,7 +307,7 @@
           <div class="title">Activity at ${esc(loc.name)}</div>
           <div class="meta" id="dc-count"></div>
           <div class="spacer"></div>
-          <div class="search-pill sm"><span class="glyph">&#8981;</span><input id="dc-search" placeholder="DC no., item or party" /></div>
+          <div class="search-pill sm"><span class="glyph">&#8981;</span><input autocomplete="off" id="dc-search" placeholder="DC no., item or party" /></div>
           <div class="seg" id="dc-filter">
             <button data-val="all" class="active">All</button>
             <button data-val="in">Input</button>
@@ -530,7 +530,7 @@
           </div>
           <div class="search-pill">
             <span class="glyph">&#8981;</span>
-            <input id="books-search" placeholder="Search any item" value="${esc(booksSearch)}" />
+            <input autocomplete="off" id="books-search" placeholder="Search any item" value="${esc(booksSearch)}" />
           </div>
         </div>
         <div id="books-rows"><div class="loading-state">Loading…</div></div>
@@ -782,7 +782,7 @@
           <label style="display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--ink-4); font-weight:600;">To
             <input type="date" id="dcs-to" style="height:32px;" />
           </label>
-          <div class="search-pill sm"><span class="glyph">&#8981;</span><input id="dcs-search" placeholder="DC no., item or party" /></div>
+          <div class="search-pill sm"><span class="glyph">&#8981;</span><input autocomplete="off" id="dcs-search" placeholder="DC no., item or party" /></div>
           <div class="seg" id="dcs-filter">
             <button data-val="all" class="active">All</button>
             <button data-val="in">Input</button>
@@ -1005,7 +1005,7 @@
         </div>
         <div class="search-pill">
           <span class="glyph">⌕</span>
-          <input id="price-search" placeholder="Search any item" />
+          <input autocomplete="off" id="price-search" placeholder="Search any item" />
         </div>
       </div>
       <div id="price-sections"><div class="loading-state">Loading…</div></div>
@@ -1076,7 +1076,7 @@
                   </div>
                   <div class="p-mid">
                     <span class="p-rupee">&#8377;</span>
-                    <input type="number" min="0" step="any" class="p-input" data-id="${node.id}" value="${node.price ?? ''}" placeholder="set rate" />
+                    <input autocomplete="off" type="number" min="0" step="any" class="p-input" data-id="${node.id}" value="${node.price ?? ''}" placeholder="set rate" />
                     <span class="p-unit">per ${esc(node.unit)}</span>
                   </div>
                   <div class="p-right">
@@ -1342,8 +1342,8 @@
     const title = isItem ? 'New item' : 'New category';
 
     openModal(title, `
-      <div class="field"><label>${isItem ? 'Item name' : 'Category name'}</label><input id="f-name" placeholder="e.g. Steel sheets" /></div>
-      ${isItem ? `<div class="field"><label>Unit</label><input id="f-unit" placeholder="e.g. sheets, pieces, sets, kg" value="pcs" /></div>` : ''}
+      <div class="field"><label>${isItem ? 'Item name' : 'Category name'}</label><input autocomplete="off" id="f-name" placeholder="e.g. Steel sheets" /></div>
+      ${isItem ? `<div class="field"><label>Unit</label><input autocomplete="off" id="f-unit" placeholder="e.g. sheets, pieces, sets, kg" value="pcs" /></div>` : ''}
       ${!isItem ? `<div class="modal-hint">A category holds no stock of its own. Its number is always the sum of the items nested under it.</div>` : ''}
       <div class="field error hidden" id="f-error"></div>
     `, [
