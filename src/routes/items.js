@@ -18,8 +18,15 @@ async function buildTree({ kind, locationIds, includePrice }) {
   let itemsQuery = supabaseAdmin
     .schema('inventory')
     .from('items')
-    .select('id, parent_id, location_id, kind, name, unit, is_active, is_leaf')
+    .select('id, parent_id, location_id, kind, name, unit, is_active, is_leaf, sort_order')
     .eq('is_active', true)
+    // A single global order is enough even though sort_order only ranks
+    // within a sibling group: items are then bucketed into their
+    // parent's `children` array (or `roots`) in fetch order below, so
+    // the per-group relative order survives regardless of how groups
+    // interleave in the flat result. `name` breaks ties for any rows
+    // that still share a sort_order (e.g. pre-migration_007 rows).
+    .order('sort_order')
     .order('name');
   if (kind) itemsQuery = itemsQuery.eq('kind', kind);
   if (locationIds) itemsQuery = itemsQuery.in('location_id', locationIds);
@@ -68,6 +75,7 @@ async function buildTree({ kind, locationIds, includePrice }) {
         kind: i.kind,
         name: i.name,
         unit: i.unit,
+        sort_order: i.sort_order,
         // Stored, not inferred: a node explicitly created as a category
         // stays a category even while empty (see rollup() below).
         storedIsLeaf: i.is_leaf,
@@ -202,6 +210,17 @@ router.post('/', requireAdmin, async (req, res, next) => {
       is_leaf = false;
     }
 
+    // Append to the end of its sibling group (same parent, same
+    // location) rather than defaulting to 0 — a fresh item shouldn't
+    // jump to the top of a manually-ordered tree.
+    let siblingCountQuery = supabaseAdmin
+      .schema('inventory')
+      .from('items')
+      .select('id', { count: 'exact', head: true })
+      .eq('location_id', location_id);
+    siblingCountQuery = parent_id ? siblingCountQuery.eq('parent_id', parent_id) : siblingCountQuery.is('parent_id', null);
+    const { count: siblingCount } = await siblingCountQuery;
+
     const { data, error } = await supabaseAdmin
       .schema('inventory')
       .from('items')
@@ -212,6 +231,7 @@ router.post('/', requireAdmin, async (req, res, next) => {
         parent_id: parent_id || null,
         location_id,
         is_leaf,
+        sort_order: siblingCount || 0,
         created_by: req.user.id,
       })
       .select()
@@ -219,6 +239,30 @@ router.post('/', requireAdmin, async (req, res, next) => {
 
     if (error) return res.status(400).json({ error: error.message });
     res.status(201).json({ item: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/items/reorder — admin only: persist a sibling group's new
+// order after a drag-and-drop move in the tree.
+// body: { ordered_ids: [id, id, ...] } — every id in one sibling group
+// (same parent_id, same location), in the order they should now render.
+// Declared before PATCH /:id so Express doesn't treat "reorder" as an id.
+router.patch('/reorder', requireAdmin, async (req, res, next) => {
+  try {
+    const { ordered_ids } = req.body;
+    if (!Array.isArray(ordered_ids) || !ordered_ids.length) {
+      return res.status(400).json({ error: 'ordered_ids is required' });
+    }
+    const results = await Promise.all(
+      ordered_ids.map((id, index) =>
+        supabaseAdmin.schema('inventory').from('items').update({ sort_order: index }).eq('id', id)
+      )
+    );
+    const failed = results.find((r) => r.error);
+    if (failed) return res.status(400).json({ error: failed.error.message });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

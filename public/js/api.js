@@ -76,6 +76,7 @@ window.JKApi = (function () {
     items: (params) => request('GET', '/api/items', { params }),
     createItem: (body) => request('POST', '/api/items', { body }),
     updateItem: (id, body) => request('PATCH', `/api/items/${id}`, { body }),
+    reorderItems: (ordered_ids) => request('PATCH', '/api/items/reorder', { body: { ordered_ids } }),
     recordDc: (body, params) => request('POST', '/api/dc', { body, params }),
     dcs: (params) => request('GET', '/api/dc', { params }),
     dc: (id) => request('GET', `/api/dc/${id}`),

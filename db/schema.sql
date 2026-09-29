@@ -57,12 +57,17 @@ create table if not exists inventory.items (
   -- an empty category must still render as a category, not a leaf.
   is_leaf      boolean not null default true,
   is_active    boolean not null default true,
+  -- Rank within its sibling group (same parent_id, same location),
+  -- lower first. Admin sets this by dragging rows in the tree; a new
+  -- item is appended to the end of its group. See migration_007.
+  sort_order   integer not null default 0,
   created_by   uuid,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
 
 create index if not exists items_parent_id_idx on inventory.items(parent_id);
+create index if not exists items_parent_sort_idx on inventory.items(parent_id, sort_order);
 create index if not exists items_kind_idx on inventory.items(kind);
 create index if not exists items_location_id_idx on inventory.items(location_id);
 -- Every tree fetch filters is_active + usually location_id (+ kind)

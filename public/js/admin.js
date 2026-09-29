@@ -16,6 +16,7 @@
     view: 'home',
     param: null,
     kind: 'material',
+    branch: null, // location drill-in's selected top-level branch; null = 'All'
     expanded: new Set(),
     search: '',
     pricesSearch: '',
@@ -130,6 +131,70 @@
         <span class="corner${c.corner ? '' : ' off'}"></span>
       </span>
     `).join('');
+  }
+
+  // ---------------------------------------------------------------
+  // Drag-to-reorder — shared by every admin tree view (the location
+  // drill-in's stock tree and the Item trees catalog editor). Rows carry
+  // data-drag-id (their own item id) and data-drag-parent (a key for
+  // their sibling group: "loc:<locationId>" for a top-level row,
+  // "item:<parentItemId>" for a nested one). Dropping a row onto another
+  // row in the *same* group moves it to just before the drop target,
+  // reorders the in-memory sibling array to match, persists the whole
+  // group via PATCH /api/items/reorder, then re-renders.
+  // ---------------------------------------------------------------
+  let dragState = null;
+
+  function findNodeById(nodes, id) {
+    for (const n of nodes) {
+      if (n.id === id) return n;
+      if (n.children && n.children.length) {
+        const found = findNodeById(n.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  function wireDragReorder(containerEl, siblingsArrayFor, onReordered) {
+    containerEl.querySelectorAll('.tree-row[data-drag-id]').forEach((row) => {
+      row.draggable = true;
+      row.ondragstart = (e) => {
+        dragState = { id: row.dataset.dragId, parent: row.dataset.dragParent };
+        e.dataTransfer.effectAllowed = 'move';
+        row.classList.add('dragging');
+      };
+      row.ondragend = () => {
+        row.classList.remove('dragging');
+        containerEl.querySelectorAll('.drag-over').forEach((r) => r.classList.remove('drag-over'));
+      };
+      row.ondragover = (e) => {
+        if (!dragState || dragState.parent !== row.dataset.dragParent || dragState.id === row.dataset.dragId) return;
+        e.preventDefault();
+        row.classList.add('drag-over');
+      };
+      row.ondragleave = () => row.classList.remove('drag-over');
+      row.ondrop = async (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const dragged = dragState;
+        dragState = null;
+        if (!dragged || dragged.parent !== row.dataset.dragParent || dragged.id === row.dataset.dragId) return;
+        const siblings = siblingsArrayFor(row.dataset.dragParent);
+        if (!siblings) return;
+        const fromIdx = siblings.findIndex((n) => n.id === dragged.id);
+        const toIdx = siblings.findIndex((n) => n.id === row.dataset.dragId);
+        if (fromIdx === -1 || toIdx === -1) return;
+        const [moved] = siblings.splice(fromIdx, 1);
+        siblings.splice(fromIdx < toIdx ? toIdx - 1 : toIdx, 0, moved);
+        try {
+          await window.JKApi.reorderItems(siblings.map((n) => n.id));
+        } catch (err) {
+          JKToast.error(err.message);
+        }
+        onReordered();
+      };
+    });
   }
 
   function matches(node, q) {
@@ -282,13 +347,27 @@
     const loc = state.locations.find((l) => l.id === locId);
     if (!loc) { el.innerHTML = `<div class="empty-state">Location not found.</div>`; return; }
     document.getElementById('ctx-title').textContent = loc.name;
+    el.innerHTML = `<div class="loading-state">Loading…</div>`;
+
+    let dcSearch = '';
+    let dcFilter = 'all';
+
+    // Fetched up front (not just after the shell paints) because the
+    // branch tabs below are built from fullTree's top-level items —
+    // there's no fixed Materials/Consumables pair to render before we
+    // know what branches actually exist.
+    const [{ items: fullTree }, { dcs }] = await Promise.all([
+      window.JKApi.items({ location: locId }),
+      window.JKApi.dcs({ location: locId }),
+    ]);
+    if (state.branch && !fullTree.some((n) => n.id === state.branch)) state.branch = null;
 
     el.innerHTML = `
       <div class="summary-cards" id="summary-cards"><div class="loading-state">Loading…</div></div>
       <div class="tree-toolbar">
         <div class="tabs">
-          <button class="tab ${state.kind === 'material' ? 'active' : ''}" data-kind="material">Materials</button>
-          <button class="tab ${state.kind === 'consumable' ? 'active' : ''}" data-kind="consumable">Consumables</button>
+          <button class="tab ${!state.branch ? 'active' : ''}" data-branch="">All</button>
+          ${fullTree.map((b) => `<button class="tab ${state.branch === b.id ? 'active' : ''}" data-branch="${b.id}">${esc(b.name)}</button>`).join('')}
         </div>
         <input autocomplete="off" class="search-input" id="search" placeholder="Search items" />
         <div class="dc-quick-actions">
@@ -298,7 +377,7 @@
       </div>
       <div class="tree-table" style="margin-bottom:26px;">
         <div class="tree-head">
-          <div class="col-name">Material</div>
+          <div class="col-name">Item</div>
           <div class="col-qty" style="flex:0 0 124px;">On hand</div>
           <div class="col-price" style="flex:0 0 112px; padding-left:10px;">Price &#8377;</div>
           <div class="col-value" style="flex:0 0 140px; padding-left:10px;">Value &#8377;</div>
@@ -328,7 +407,14 @@
         <div id="dc-list"><div class="loading-state">Loading…</div></div>
       </section>
     `;
-    el.querySelectorAll('.tab').forEach((b) => { b.onclick = () => { state.kind = b.dataset.kind; renderLocation(el, locId); }; });
+    el.querySelectorAll('.tab').forEach((b) => {
+      b.onclick = async () => {
+        state.branch = b.dataset.branch || null;
+        el.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === b));
+        await loadAndRenderTree(locId);
+        updateTreeTotal();
+      };
+    });
     el.querySelector('#search').oninput = debounce((e) => { state.search = e.target.value; loadAndRenderTree(locId); }, 150);
     const openLocationDcWizard = (direction) => window.JKDcWizard.open({
       direction,
@@ -339,13 +425,6 @@
     });
     el.querySelector('#btn-dc-in').onclick = () => openLocationDcWizard('in');
     el.querySelector('#btn-dc-out').onclick = () => openLocationDcWizard('out');
-    let dcSearch = '';
-    let dcFilter = 'all';
-
-    const [{ items: fullTree }, { dcs }] = await Promise.all([
-      window.JKApi.items({ location: locId }),
-      window.JKApi.dcs({ location: locId }),
-    ]);
 
     const idx = flattenIndex(fullTree);
     let matValue = 0, consValue = 0, zero = 0, unpriced = 0;
@@ -384,13 +463,23 @@
 
     await loadAndRenderTree(locId);
 
-    // Tree total row — mockup-exact: "Total · Materials/Consumables at
-    // <Location>" against the value for whichever tab is active.
-    const kindLabel = state.kind === 'consumable' ? 'Consumables' : 'Materials';
-    el.querySelector('#tree-total').innerHTML = `
-      <div class="left">Total &middot; ${esc(kindLabel)} at ${esc(loc.name)}</div>
-      <div class="right">${JKFmt.money(state.kind === 'consumable' ? consValue : matValue)}</div>
-    `;
+    // Tree total row — "Total · <branch or All> at <Location>" against
+    // the value for whichever branch tab is active (each root item
+    // already carries its own subtree's rolled-up value per location).
+    function updateTreeTotal() {
+      const totalEl = el.querySelector('#tree-total');
+      if (!totalEl) return;
+      const branchNode = state.branch ? fullTree.find((n) => n.id === state.branch) : null;
+      const branchLabel = branchNode ? branchNode.name : 'All items';
+      const value = branchNode
+        ? Number(branchNode.value?.[locId] || 0)
+        : fullTree.reduce((s, n) => s + Number(n.value?.[locId] || 0), 0);
+      totalEl.innerHTML = `
+        <div class="left">Total &middot; ${esc(branchLabel)} at ${esc(loc.name)}</div>
+        <div class="right">${JKFmt.money(value)}</div>
+      `;
+    }
+    updateTreeTotal();
 
     // Activity — mockup-exact: search + All/Input/Output filter, and a
     // DC / Item and party / Qty / Value / When row layout with a small
@@ -446,8 +535,8 @@
 
   let currentTree = [];
   async function loadAndRenderTree(locId) {
-    const { items } = await window.JKApi.items({ kind: state.kind, location: locId });
-    currentTree = items;
+    const { items } = await window.JKApi.items({ location: locId });
+    currentTree = state.branch ? items.filter((n) => n.id === state.branch) : items;
     renderAdminTree(document.getElementById('tree-body'), locId);
   }
 
@@ -458,7 +547,7 @@
     if (!roots.length) { bodyEl.innerHTML = `<div class="empty-state">No items found.</div>`; return; }
     if (q) roots.forEach((n) => expandForSearch(n, q));
     const rowsHtml = [];
-    roots.forEach((n, i) => renderAdminNode(n, locId, [], i === roots.length - 1, rowsHtml));
+    roots.forEach((n, i) => renderAdminNode(n, locId, [], i === roots.length - 1, rowsHtml, 0, `loc:${locId}`));
     bodyEl.innerHTML = rowsHtml.join('');
     bodyEl.querySelectorAll('.toggle').forEach((btn) => {
       btn.onclick = () => {
@@ -467,23 +556,42 @@
         renderAdminTree(bodyEl, locId);
       };
     });
+    // Dragging is only meaningful against the unfiltered, unsearched
+    // sibling order — skip wiring it while a search or a single branch
+    // tab narrows what's on screen, so a drop can't silently reorder
+    // against a list the admin isn't actually looking at.
+    if (!q) {
+      wireDragReorder(
+        bodyEl,
+        (parentKey) => {
+          if (parentKey === `loc:${locId}`) return state.branch ? null : currentTree;
+          const parentId = parentKey.slice(5);
+          const parent = findNodeById(currentTree, parentId);
+          return parent ? parent.children : null;
+        },
+        () => renderAdminTree(bodyEl, locId)
+      );
+    }
   }
 
   // Location drill-in tree: same connector-line row shape as the location
   // desk, plus per-leaf price (plain number, no ₹) and rolled-up value
   // columns. Leaf `.item-sub` stays empty — unit only appears next to qty.
-  function renderAdminNode(node, locId, parentChain, isLast, out, depth) {
+  function renderAdminNode(node, locId, parentChain, isLast, out, depth, parentKey) {
     depth = depth || 0;
     const qty = Number(node.qtyByLocation?.[locId] || 0);
     const value = Number(node.value?.[locId] || 0);
     const isLeaf = node.isLeaf;
     const low = isLeaf && qty <= 0;
     const connectors = connectorsHtml(depth, isLast, parentChain);
+    const dragAttrs = `data-drag-id="${node.id}" data-drag-parent="${esc(parentKey)}"`;
+    const handle = `<span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>`;
 
     if (isLeaf) {
       out.push(`
-        <div class="tree-row leaf${low ? ' low' : ''}">
+        <div class="tree-row leaf${low ? ' low' : ''}" ${dragAttrs}>
           <div class="row-main">
+            ${handle}
             ${connectors}
             <span class="disclosure"><span class="status-dot${low ? ' bad' : ''}"></span></span>
             <span class="names">
@@ -502,8 +610,9 @@
     const expanded = state.expanded.has(node.id);
     const isTop = depth === 0;
     out.push(`
-      <div class="tree-row parent${isTop ? ' top-parent' : ''}">
+      <div class="tree-row parent${isTop ? ' top-parent' : ''}" ${dragAttrs}>
         <div class="row-main">
+          ${handle}
           ${connectors}
           <span class="disclosure"><button class="toggle${expanded ? ' open' : ''}" data-id="${node.id}">&#9654;</button></span>
           <span class="names">
@@ -518,7 +627,7 @@
     `);
     if (expanded) {
       const childChain = depth === 0 ? [] : [isLast].concat(parentChain);
-      node.children.forEach((c, i) => renderAdminNode(c, locId, childChain, i === node.children.length - 1, out, depth + 1));
+      node.children.forEach((c, i) => renderAdminNode(c, locId, childChain, i === node.children.length - 1, out, depth + 1, `item:${node.id}`));
     }
   }
 
@@ -1157,7 +1266,7 @@
       let leafCount = 0, catCount = 0;
       (function count(nodes) { nodes.forEach((n) => { if (n.isLeaf) leafCount++; else { catCount++; count(n.children); } }); })(tree);
       const rowsHtml = [];
-      tree.forEach((n, i) => renderTreesNode(n, loc.id, [], i === tree.length - 1, rowsHtml));
+      tree.forEach((n, i) => renderTreesNode(n, loc.id, [], i === tree.length - 1, rowsHtml, 0, `loc:${loc.id}`));
       const kindLabel = state.kind === 'consumable' ? 'consumable' : 'material';
       return `
         <div class="trees-loc-section">
@@ -1186,19 +1295,44 @@
       btn.onclick = () => openItemForm(null, btn.dataset.loc, () => renderTrees(document.getElementById('view-root')));
     });
     wireTreesRows(wrap);
+
+    // Drag-to-reorder across every location section on this screen —
+    // each row's data-drag-parent already says which location (and
+    // which parent item within it) it belongs to, so one wiring pass
+    // over the whole wrap covers all of them without them interfering.
+    wireDragReorder(
+      wrap,
+      (parentKey) => {
+        if (parentKey.startsWith('loc:')) {
+          const locId = parentKey.slice(4);
+          const entry = treesData.find((t) => t.loc.id === locId);
+          return entry ? entry.tree : null;
+        }
+        const parentId = parentKey.slice(5);
+        for (const { tree } of treesData) {
+          const found = findNodeById(tree, parentId);
+          if (found) return found.children;
+        }
+        return null;
+      },
+      renderTreesSections
+    );
   }
 
-  function renderTreesNode(node, locId, parentChain, isLast, out, depth) {
+  function renderTreesNode(node, locId, parentChain, isLast, out, depth, parentKey) {
     depth = depth || 0;
     const connectors = connectorsHtml(depth, isLast, parentChain);
     const isLeaf = node.isLeaf;
     const expanded = state.expanded.has(node.id);
     const isTop = depth === 0;
     const qty = sumQty(node.qtyByLocation);
+    const dragAttrs = `data-drag-id="${node.id}" data-drag-parent="${esc(parentKey)}"`;
+    const handle = `<span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>`;
 
     out.push(`
-      <div class="tree-row ${isLeaf ? 'leaf' : `parent${isTop ? ' top-parent' : ''}`}">
+      <div class="tree-row ${isLeaf ? 'leaf' : `parent${isTop ? ' top-parent' : ''}`}" ${dragAttrs}>
         <div class="row-main">
+          ${handle}
           ${connectors}
           <span class="disclosure">${isLeaf
             ? `<span class="status-dot${qty <= 0 ? ' bad' : ''}"></span>`
@@ -1218,7 +1352,7 @@
     `);
     if (!isLeaf && expanded) {
       const childChain = depth === 0 ? [] : [isLast].concat(parentChain);
-      node.children.forEach((c, i) => renderTreesNode(c, locId, childChain, i === node.children.length - 1, out, depth + 1));
+      node.children.forEach((c, i) => renderTreesNode(c, locId, childChain, i === node.children.length - 1, out, depth + 1, `item:${node.id}`));
     }
   }
 

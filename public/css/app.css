@@ -233,6 +233,17 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
 
 .tree-row .row-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: stretch; }
 
+/* Drag-to-reorder (admin trees only) */
+.tree-row[data-drag-id] { cursor: grab; }
+.tree-row .drag-handle {
+  flex: 0 0 auto; width: 16px; display: flex; align-items: center; justify-content: center;
+  color: var(--ink-4); opacity: 0; transition: opacity 130ms; letter-spacing: -3px; font-size: 14px;
+}
+.tree-row:hover .drag-handle { opacity: 1; }
+.tree-row.dragging { opacity: 0.4; }
+.tree-row.drag-over { box-shadow: inset 0 2px 0 var(--accent); }
+
+
 /* Ancestor connector column — one per ancestor depth, 32px wide */
 .tree-row .connector { position: relative; width: 32px; flex: 0 0 auto; }
 .tree-row .connector .vline { position: absolute; left: 19px; top: 0; bottom: 0; width: 2px; background: var(--border-3); }

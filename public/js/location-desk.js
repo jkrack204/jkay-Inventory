@@ -11,12 +11,13 @@
     user: null,
     location: null,
     otherLocation: null,
-    kind: 'material',
+    branch: null, // null = 'All'; otherwise a top-level item id to scope the tree to
     tree: [],
     expanded: new Set(),
     search: '',
     view: 'tree', // 'tree' | 'activity' | 'alerts' | 'book' | 'peek' | 'mine'
     bookItem: null,
+    peekBranch: null,
     peekTree: [],
     peekExpanded: new Set(),
     peekSearch: '',
@@ -182,30 +183,37 @@
   // buttons, no price, nothing writable: this is a view, not a desk.
   // ---------------------------------------------------------------
   async function renderPeekView(el) {
+    el.innerHTML = `<div class="loading-state">Loading…</div>`;
+    const { items } = await window.JKApi.items({ peek: 1 });
+    state.peekTree = items;
+    if (state.peekBranch && !state.peekTree.some((n) => n.id === state.peekBranch)) state.peekBranch = null;
+
     el.innerHTML = `
       <div class="section-head"><h2>${escapeHtml(OTHER_NAME)} stock</h2><div class="meta">Read-only — you can't raise a DC here.</div></div>
       <div class="tree-toolbar">
         <div class="tabs">
-          <button class="tab ${state.kind === 'material' ? 'active' : ''}" data-kind="material">Materials</button>
-          <button class="tab ${state.kind === 'consumable' ? 'active' : ''}" data-kind="consumable">Consumables</button>
+          <button class="tab ${!state.peekBranch ? 'active' : ''}" data-branch="">All</button>
+          ${state.peekTree.map((b) => `<button class="tab ${state.peekBranch === b.id ? 'active' : ''}" data-branch="${b.id}">${escapeHtml(b.name)}</button>`).join('')}
         </div>
         <input autocomplete="off" class="search-input" id="peek-search" placeholder="Search items" value="${escapeHtml(state.peekSearch)}" />
       </div>
       <div class="tree-table">
         <div class="tree-head">
-          <div class="col-name">${state.kind === 'material' ? 'Material' : 'Consumable'}</div>
+          <div class="col-name">Item</div>
           <div class="col-qty">On hand</div>
         </div>
         <div id="peek-body"><div class="loading-state">Loading…</div></div>
       </div>
     `;
     el.querySelectorAll('.tab').forEach((btn) => {
-      btn.onclick = () => { state.kind = btn.dataset.kind; renderPeekView(el); };
+      btn.onclick = () => {
+        state.peekBranch = btn.dataset.branch || null;
+        el.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b === btn));
+        renderPeekBody();
+      };
     });
     el.querySelector('#peek-search').oninput = debounce((e) => { state.peekSearch = e.target.value; renderPeekBody(); }, 150);
 
-    const { items } = await window.JKApi.items({ kind: state.kind, peek: 1 });
-    state.peekTree = items;
     renderPeekBody();
   }
 
@@ -213,7 +221,8 @@
     const body = document.getElementById('peek-body');
     if (!body) return;
     const q = state.peekSearch.trim();
-    const roots = state.peekTree.filter((n) => matchesSearch(n, q));
+    let roots = state.peekBranch ? state.peekTree.filter((n) => n.id === state.peekBranch) : state.peekTree;
+    roots = roots.filter((n) => matchesSearch(n, q));
     if (!roots.length) { body.innerHTML = `<div class="empty-state">No items found.</div>`; return; }
     if (q) roots.forEach((n) => expandForSearchInto(n, q, state.peekExpanded));
     const rowsHtml = [];
@@ -296,6 +305,9 @@
   // Tree view (home)
   // ---------------------------------------------------------------
   async function renderTreeView(el) {
+    el.innerHTML = `<div class="loading-state">Loading…</div>`;
+    await loadTree();
+
     el.innerHTML = `
       <div class="action-tiles">
         <div class="action-tile in" id="tile-in">
@@ -309,8 +321,8 @@
       </div>
       <div class="tree-toolbar">
         <div class="tabs">
-          <button class="tab ${state.kind === 'material' ? 'active' : ''}" data-kind="material">Materials</button>
-          <button class="tab ${state.kind === 'consumable' ? 'active' : ''}" data-kind="consumable">Consumables</button>
+          <button class="tab ${!state.branch ? 'active' : ''}" data-branch="">All</button>
+          ${state.tree.map((b) => `<button class="tab ${state.branch === b.id ? 'active' : ''}" data-branch="${b.id}">${escapeHtml(b.name)}</button>`).join('')}
         </div>
         <div style="display:flex; gap:10px;">
           <input autocomplete="off" class="search-input" id="search" placeholder="Search items" value="${escapeHtml(state.search)}" />
@@ -319,7 +331,7 @@
       </div>
       <div class="tree-table">
         <div class="tree-head">
-          <div class="col-name">${state.kind === 'material' ? 'Material' : 'Consumable'}</div>
+          <div class="col-name">Item</div>
           <div class="col-qty">On hand</div>
         </div>
         <div id="tree-body"><div class="loading-state">Loading…</div></div>
@@ -328,19 +340,23 @@
     el.querySelector('#tile-in').onclick = () => openDcWizard('in');
     el.querySelector('#tile-out').onclick = () => openDcWizard('out');
     el.querySelectorAll('.tab').forEach((btn) => {
-      btn.onclick = () => { state.kind = btn.dataset.kind; renderTreeView(el); };
+      btn.onclick = () => {
+        state.branch = btn.dataset.branch || null;
+        el.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b === btn));
+        renderTreeBody();
+      };
     });
     el.querySelector('#btn-collapse').onclick = () => { state.expanded.clear(); renderTreeBody(); };
     const searchEl = el.querySelector('#search');
     searchEl.oninput = debounce(() => { state.search = searchEl.value; renderTreeBody(); }, 150);
 
-    await loadTree();
     renderTreeBody();
   }
 
   async function loadTree() {
-    const { items } = await window.JKApi.items({ kind: state.kind, location: state.location.id });
+    const { items } = await window.JKApi.items({ location: state.location.id });
     state.tree = items;
+    if (state.branch && !state.tree.some((n) => n.id === state.branch)) state.branch = null;
     const prefs = window.JKUi.getPrefs();
     if (prefs.expandDefault) {
       (function expandAll(nodes) {
@@ -360,7 +376,8 @@
     if (!body) return;
     const q = state.search.trim();
     const prefs = window.JKUi.getPrefs();
-    let roots = state.tree.filter((n) => matchesSearch(n, q));
+    let roots = state.branch ? state.tree.filter((n) => n.id === state.branch) : state.tree;
+    roots = roots.filter((n) => matchesSearch(n, q));
     if (prefs.hideZero) roots = roots.filter((n) => !isAllZero(n)).map((n) => filterZero(n)).filter(Boolean);
     if (!roots.length) {
       body.innerHTML = `<div class="empty-state">No items found.</div>`;
