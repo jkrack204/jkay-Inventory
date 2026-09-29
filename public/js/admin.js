@@ -291,6 +291,10 @@
           <button class="tab ${state.kind === 'consumable' ? 'active' : ''}" data-kind="consumable">Consumables</button>
         </div>
         <input autocomplete="off" class="search-input" id="search" placeholder="Search items" />
+        <div class="dc-quick-actions">
+          <button class="btn btn-sm" id="btn-dc-in">+ Input DC</button>
+          <button class="btn btn-sm" id="btn-dc-out">+ Output DC</button>
+        </div>
       </div>
       <div class="tree-table" style="margin-bottom:26px;">
         <div class="tree-head">
@@ -326,6 +330,15 @@
     `;
     el.querySelectorAll('.tab').forEach((b) => { b.onclick = () => { state.kind = b.dataset.kind; renderLocation(el, locId); }; });
     el.querySelector('#search').oninput = debounce((e) => { state.search = e.target.value; loadAndRenderTree(locId); }, 150);
+    const openLocationDcWizard = (direction) => window.JKDcWizard.open({
+      direction,
+      location: { id: loc.id, name: loc.name },
+      // Full re-render, not just the tree: a new DC also changes the
+      // summary cards and Activity panel on this same screen.
+      onRecorded: async () => { await renderLocation(el, locId); },
+    });
+    el.querySelector('#btn-dc-in').onclick = () => openLocationDcWizard('in');
+    el.querySelector('#btn-dc-out').onclick = () => openLocationDcWizard('out');
     let dcSearch = '';
     let dcFilter = 'all';
 
