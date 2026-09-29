@@ -204,11 +204,18 @@ create trigger item_prices_leaf_only
 -- ---------------------------------------------------------------------
 create type inventory.user_role as enum ('operator', 'admin');
 
+-- Logins sign in with a username, not an email — Supabase Auth is still
+-- email-based under the hood, so every login's Auth identity is a
+-- synthetic "<username>@jkayracks.local" address (see src/routes/users.js
+-- / scripts/provision-user.js); this table's "email" column is just the
+-- person's real address, stored for records and never used to sign in.
 create table if not exists inventory.profiles (
   id           uuid primary key references auth.users(id) on delete cascade,
+  username     text not null unique,
   full_name    text not null,
   role         inventory.user_role not null,
   location_id  uuid references inventory.locations(id),
+  email        text,
   created_at   timestamptz not null default now(),
   constraint operator_has_location check (
     (role = 'operator' and location_id is not null) or

@@ -1,21 +1,25 @@
 #!/usr/bin/env node
 /**
- * Creates one of the tool's logins: a Supabase Auth user plus its
- * matching inventory.profiles row.
+ * Creates one of the tool's logins: a Supabase Auth user (keyed by a
+ * synthetic "<username>@jkayracks.local" address) plus its matching
+ * inventory.profiles row. Logins sign in with a username, not an email —
+ * the real email (optional) is just stored on the profile for records.
  *
  * Usage:
- *   node scripts/provision-user.js --email fab@jkayracks.com --password "..." \
+ *   node scripts/provision-user.js --username fab --password "..." \
  *     --name "Fabrication Desk" --role operator --location Fabrication
  *
- *   node scripts/provision-user.js --email admin@jkayracks.com --password "..." \
- *     --name "Admin" --role admin
+ *   node scripts/provision-user.js --username admin --password "..." \
+ *     --name "Admin" --role admin --email admin@realdomain.com
  *
  * Requires .env (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) to be set.
- * Run this once per login when setting up (3 times total: Fabrication,
- * Finished, Admin), or again later to add/replace a user.
+ * Run this once per login when setting up, or again later to add one.
  */
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
+
+const AUTH_EMAIL_DOMAIN = 'jkayracks.local';
+const USERNAME_RE = /^[a-z0-9](?:[a-z0-9._-]{1,30}[a-z0-9])?$/;
 
 function parseArgs() {
   const args = {};
@@ -28,12 +32,17 @@ function parseArgs() {
 }
 
 async function main() {
-  const { email, password, name, role, location } = parseArgs();
+  const { username: rawUsername, password, name, role, location, email } = parseArgs();
+  const username = String(rawUsername || '').trim().toLowerCase();
 
-  if (!email || !password || !name || !role) {
+  if (!username || !password || !name || !role) {
     console.error(
-      'Usage: node scripts/provision-user.js --email <email> --password <password> --name "<Full Name>" --role operator|admin [--location Fabrication|Finished]'
+      'Usage: node scripts/provision-user.js --username <username> --password <password> --name "<Full Name>" --role operator|admin [--location Fabrication|Finished] [--email <real email, optional>]'
     );
+    process.exit(1);
+  }
+  if (!USERNAME_RE.test(username)) {
+    console.error('--username must be 3-32 characters: lowercase letters, numbers, dot, underscore or hyphen');
     process.exit(1);
   }
   if (!['operator', 'admin'].includes(role)) {
@@ -65,7 +74,7 @@ async function main() {
   }
 
   const { data: created, error: createError } = await supabase.auth.admin.createUser({
-    email,
+    email: `${username}@${AUTH_EMAIL_DOMAIN}`,
     password,
     email_confirm: true,
   });
@@ -77,7 +86,7 @@ async function main() {
   const { error: profileError } = await supabase
     .schema('inventory')
     .from('profiles')
-    .insert({ id: created.user.id, full_name: name, role, location_id: locationId });
+    .insert({ id: created.user.id, username, full_name: name, role, location_id: locationId, email: email || null });
 
   if (profileError) {
     console.error('Auth user created, but failed to create profile:', profileError.message);
@@ -85,7 +94,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Created ${role} login: ${email} (${name})${location ? ` — ${location}` : ''}`);
+  console.log(`Created ${role} login: username "${username}" (${name})${location ? ` — ${location}` : ''}`);
 }
 
 main();

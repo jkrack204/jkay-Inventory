@@ -270,10 +270,21 @@ filesystem; it was written there directly via a device-bridge link)
       running balance forward through each entry to a closing balance.
 
   scripts/provision-user.js
-    - CLI: `node scripts/provision-user.js --email ... --password ...
+    - CLI: `node scripts/provision-user.js --username ... --password ...
       --name "..." --role operator|admin [--location Fabrication|
-      Finished]`. Creates the Supabase Auth user + the matching
-      inventory.profiles row. Run 3 times for the 3 real logins.
+      Finished] [--email ... (optional, real email for records only)]`.
+      Creates the Supabase Auth user (keyed by a synthetic
+      "<username>@jkayracks.local" address — see below) + the matching
+      inventory.profiles row.
+    - Login is by USERNAME, not email (changed 29 Sept 2026, db/migration_006).
+      Supabase Auth is still email-based under the hood, so every login's
+      Auth identity is "<username>@jkayracks.local" — nobody ever sees or
+      types that. inventory.profiles gained `username` (unique, what's
+      typed on the login screen) and `email` (the person's real address,
+      optional, stored for records, never used to sign in). Existing
+      logins were backfilled: username = the local part of their existing
+      synthetic email (fab@jkayracks.local -> "fab", etc.), so nothing
+      broke for logins created before this change.
 
   public/index.html
     - Currently a placeholder ("Frontend not built yet — the API is

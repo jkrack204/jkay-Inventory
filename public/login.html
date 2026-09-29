@@ -25,11 +25,11 @@
       <div class="login-panel-top"></div>
       <div class="login-panel-body">
         <div class="login-title">Sign in</div>
-        <div class="login-sub">Fabrication, Finished, or Admin — use the login you were given.</div>
+        <div class="login-sub">Fabrication, Finished, or Admin — use the username you were given.</div>
         <form id="login-form">
           <div class="field">
-            <label>Email</label>
-            <input type="email" id="email" autocomplete="username" required />
+            <label>Username</label>
+            <input type="text" id="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required />
           </div>
           <div class="field">
             <label>Password</label>
@@ -71,16 +71,19 @@
 
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const email = document.getElementById('email').value.trim();
+    const username = document.getElementById('username').value.trim().toLowerCase();
     const password = document.getElementById('password').value;
     const errorEl = document.getElementById('login-error');
     const btn = document.getElementById('login-btn');
     errorEl.classList.add('hidden');
     btn.disabled = true;
     btn.textContent = 'Signing in…';
-    const { error } = await window.JKAuth.signIn(email, password);
+    // The username is typed, but Supabase Auth is still email-based under
+    // the hood — every login's Auth identity is "<username>@jkayracks.local",
+    // set up that way when the login was created (see src/routes/users.js).
+    const { error } = await window.JKAuth.signIn(`${username}@jkayracks.local`, password);
     if (error) {
-      errorEl.textContent = error.message || 'Could not sign in — check the email and password.';
+      errorEl.textContent = error.message || 'Could not sign in — check the username and password.';
       errorEl.classList.remove('hidden');
       btn.disabled = false;
       btn.textContent = 'Sign in';

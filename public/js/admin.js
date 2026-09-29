@@ -1463,7 +1463,7 @@
       <div class="user-row" data-id="${u.id}">
         <span class="user-row-main">
           <span class="item-name">${esc(u.full_name)}</span>
-          <span class="item-crumb">${esc(u.email || '')}</span>
+          <span class="item-crumb">@${esc(u.username)}${u.email ? ' · ' + esc(u.email) : ''}</span>
         </span>
         <span class="loc-pill ${u.role === 'admin' ? '' : (u.location_name === 'Fabrication' ? 'fab' : 'finished')}">${u.role === 'admin' ? 'Admin' : esc(u.location_name || '—')}</span>
         <span class="user-row-actions">
@@ -1491,7 +1491,8 @@
   function openUserForm() {
     openModal('Add user', `
       <div class="field"><label>Full name</label><input id="f-name" /></div>
-      <div class="field"><label>Email</label><input id="f-email" type="email" autocomplete="off" /></div>
+      <div class="field"><label>Username</label><input id="f-username" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="e.g. rakesh" /></div>
+      <div class="field"><label>Email <span class="field-optional">(optional — for records only, not used to sign in)</span></label><input id="f-email" type="email" autocomplete="off" /></div>
       <div class="field"><label>Password</label><input id="f-password" type="password" autocomplete="new-password" placeholder="At least 8 characters" /></div>
       <div class="field">
         <label>Role</label>
@@ -1512,18 +1513,19 @@
       {
         label: 'Create login', primary: true, onClick: async (btn) => {
           const full_name = document.getElementById('f-name').value.trim();
+          const username = document.getElementById('f-username').value.trim().toLowerCase();
           const email = document.getElementById('f-email').value.trim();
           const password = document.getElementById('f-password').value;
           const role = document.getElementById('f-role').value;
           const location_id = document.getElementById('f-location').value;
           const errorEl = document.getElementById('f-error');
-          if (!full_name || !email || !password) {
-            errorEl.textContent = 'Name, email and password are all required.'; errorEl.classList.remove('hidden'); return;
+          if (!full_name || !username || !password) {
+            errorEl.textContent = 'Name, username and password are all required.'; errorEl.classList.remove('hidden'); return;
           }
           btn.disabled = true;
           try {
             await window.JKApi.createUser({
-              full_name, email, password, role,
+              full_name, username, email: email || undefined, password, role,
               location_id: role === 'operator' ? location_id : undefined,
             });
             closeModal();
