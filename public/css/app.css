@@ -535,16 +535,16 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
 }
 .activity-row:hover { background: var(--hover); }
 .activity-row:last-child { border-bottom: none; }
-.ar-dc { flex: 0 0 96px; display: flex; align-items: center; gap: 7px; }
+.ar-dc { flex: 0 0 156px; display: flex; align-items: center; gap: 7px; }
 .ar-dir { width: 22px; height: 22px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; border-radius: 7px; background: var(--accent-tint-2); color: var(--accent); font-size: 12px; font-weight: 700; }
 .ar-dir.in { background: var(--good-tint); color: var(--good-ink); }
-.ar-no { font-size: 12.5px; font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+.ar-no { font-size: 12.5px; letter-spacing: 0; font-weight: 600; color: var(--ink-3); white-space: nowrap; }
 .ar-main { flex: 1 1 auto; min-width: 0; }
 .ar-item { font-size: 16px; color: var(--ink); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 .ar-sub { font-size: 13.5px; color: var(--muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 .ar-qty { flex: 0 0 110px; text-align: right; white-space: nowrap; font-size: 16px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
 .ar-value { flex: 0 0 124px; text-align: right; white-space: nowrap; padding-left: 10px; font-size: 15px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.ar-when { flex: 0 0 104px; text-align: right; white-space: nowrap; padding-left: 10px; font-size: 12.5px; color: var(--muted); }
+.ar-when { flex: 0 0 150px; text-align: right; white-space: nowrap; padding-left: 10px; font-size: 12.5px; color: var(--muted); }
 
 /* ---------------- Admin: Prices ---------------- */
 .price-intro {
@@ -882,4 +882,84 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
   .book-list-head .bkcol-price, .book-row .bkcol-price { display: none; }
   .bookov-thead .c-date, .bookov-row .c-date, .bookov-obrow .c-date, .bookov-crow .c-date { display: none; }
   .bookov-body { padding: 16px 14px 32px; }
+}
+
+/* ---- Phone layout (all screens) --------------------------------------
+   Desktop is untouched; everything below only applies on narrow screens.
+   Column widths in the admin/desk screens are set inline, hence !important. */
+@media (max-width: 720px) {
+  body { overflow-x: hidden; }
+  .topbar { gap: 8px; }
+  .topbar .nav-actions { flex-wrap: wrap; gap: 6px; }
+  .topbar .divider { display: none; }
+  .topbar .context { min-width: 0; }
+  .page { padding: 12px 10px 60px; }
+
+  /* toolbars: tabs scroll sideways, search + buttons take a full row */
+  .tree-toolbar { gap: 8px; }
+  .tree-toolbar > * { max-width: 100%; }
+  .tabs { display: flex; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tab { white-space: nowrap; flex: 0 0 auto; padding: 9px 14px; }
+  .search-input { width: 100%; min-width: 0; flex: 1 1 100%; }
+  .tree-toolbar > div[style*="display:flex"] { width: 100%; }
+  .dc-quick-actions { width: 100%; }
+  .dc-quick-actions .btn { flex: 1; }
+
+  /* summary cards: two per row */
+  .summary-card { flex: 1 1 calc(50% - 8px); padding: 12px 12px 11px; }
+  .summary-card .value { font-size: 21px; }
+
+  /* tree tables: drop price + shrink numeric columns */
+  .tree-head, .tree-row { padding-right: 10px; }
+  .tree-head .col-qty, .tree-row .col-qty { flex: 0 0 84px !important; }
+  .tree-head .col-value, .tree-row .col-value { flex: 0 0 92px !important; padding-left: 6px !important; font-size: 13.5px; }
+  .tree-head .col-price, .tree-row .col-price { display: none !important; }
+  .tree-head .col-actions.wide, .tree-row .col-actions.wide, .tree-head .col-actions, .tree-row .col-actions { flex: 0 0 auto; }
+  .tree-row .names { padding: 11px 0 11px 8px; }
+  .tree-row.top-parent .item-name { font-size: 16.5px; }
+  .tree-row.parent:not(.top-parent) .item-name { font-size: 15px; }
+  .tree-row.leaf .item-name { font-size: 14.5px; }
+  .tree-row .col-qty .qty-num { font-size: 14.5px !important; }
+  .tree-row .connector { width: 18px; }
+  .tree-row .connector .vline, .tree-row .connector .corner { left: 9px; }
+  .tree-row .disclosure { width: 30px; }
+  .tree-row .drag-handle { display: none; }
+  .tree-total-row { padding: 12px 10px; }
+  .tree-total-row .right { flex: 0 0 110px !important; }
+
+  /* item action buttons (rename / delete / ...) wrap and are tap-sized */
+  .item-action-panel { padding-left: 12px !important; padding-right: 10px; }
+  .item-action-panel .item-action-label { flex: 1 1 100%; }
+  .item-action-panel .btn-sm { padding: 8px 11px; }
+
+  /* activity / DC lists */
+  .activity-panel-head { padding: 12px 12px; }
+  .activity-panel-head .spacer { display: none; }
+  .activity-panel-head .search-pill.sm { min-width: 0; flex: 1 1 100%; }
+  .activity-panel-head .seg { width: 100%; }
+  .activity-panel-head .seg button { flex: 1; }
+  .activity-table-head { display: none; }
+  .activity-row { padding: 10px 12px; flex-wrap: wrap; }
+  .activity-row > div { flex: 1 1 auto !important; min-width: 0; text-align: left !important; padding-left: 0 !important; }
+  .dc-row { padding: 10px 12px; gap: 8px; }
+  .dc-row .dc-value { min-width: 0; }
+
+  /* modals: bottom sheet feel, full width */
+  .modal-scrim { padding: 0; align-items: flex-end; }
+  .modal, .modal.wide { max-width: none; border-radius: var(--radius-lg) var(--radius-lg) 0 0; max-height: 92vh; }
+  .modal-body { padding: 16px 16px; }
+  .modal-head { padding: 14px 16px 12px; }
+  .modal-foot { padding: 12px 16px; flex-wrap: wrap; }
+  .modal-foot .btn { flex: 1 1 auto; }
+
+  /* all tap targets: >= 40px and no iOS zoom-on-focus */
+  .btn { min-height: 40px; }
+  input, select, textarea { font-size: 16px; }
+  .section-head { flex-wrap: wrap; }
+}
+
+@media (max-width: 420px) {
+  .summary-card { flex: 1 1 100%; }
+  .tree-head .col-qty, .tree-row .col-qty { flex: 0 0 72px !important; }
+  .tree-head .col-value, .tree-row .col-value { flex: 0 0 80px !important; }
 }

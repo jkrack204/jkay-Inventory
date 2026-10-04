@@ -398,11 +398,11 @@
           </div>
         </div>
         <div class="activity-table-head">
-          <div style="flex:0 0 96px;">DC</div>
+          <div style="flex:0 0 156px;">DC</div>
           <div style="flex:1 1 auto;">Item and party</div>
           <div style="flex:0 0 110px; text-align:right;">Qty</div>
           <div style="flex:0 0 124px; text-align:right; padding-left:10px;">Value &#8377;</div>
-          <div style="flex:0 0 104px; text-align:right; padding-left:10px;">When</div>
+          <div style="flex:0 0 150px; text-align:right; padding-left:10px;">When</div>
         </div>
         <div id="dc-list"><div class="loading-state">Loading…</div></div>
       </section>
@@ -913,12 +913,12 @@
           <button class="btn btn-accent-tint" id="dcs-export">Export CSV</button>
         </div>
         <div class="activity-table-head">
-          <div style="flex:0 0 96px;">DC</div>
+          <div style="flex:0 0 156px;">DC</div>
           <div style="flex:0 0 110px;">Location</div>
           <div style="flex:1 1 auto;">Item and party</div>
           <div style="flex:0 0 130px;">Recorded by</div>
           <div style="flex:0 0 124px; text-align:right; padding-left:10px;">Value &#8377;</div>
-          <div style="flex:0 0 104px; text-align:right; padding-left:10px;">When</div>
+          <div style="flex:0 0 150px; text-align:right; padding-left:10px;">When</div>
         </div>
         <div id="dcs-list"><div class="loading-state">Loading…</div></div>
       </div>
@@ -1375,6 +1375,7 @@
         ${isLeaf ? `<button class="btn btn-sm" data-act="threshold" data-id="${node.id}" data-loc="${locId}">Low-stock alert</button>` : ''}
         <button class="btn btn-sm" data-act="reparent" data-id="${node.id}" data-loc="${locId}">Re-parent</button>
         <button class="btn btn-sm btn-danger" data-act="archive" data-id="${node.id}">Archive</button>
+        <button class="btn btn-sm btn-danger" data-act="delete" data-id="${node.id}" data-name="${esc(node.name)}">Delete…</button>
         ${isLeaf ? `<button class="btn btn-sm" data-act="to-category" data-id="${node.id}">Make into category</button>` : ''}
       </div>
     `;
@@ -1454,6 +1455,53 @@
     });
     wrap.querySelectorAll('[data-act="reparent"]').forEach((btn) => {
       btn.onclick = () => openReparentModal(btn.dataset.id, btn.dataset.loc);
+    });
+    wrap.querySelectorAll('[data-act="delete"]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.dataset.id; const name = btn.dataset.name;
+        let imp;
+        try { imp = await window.JKApi.deleteImpact(id); } catch (err) { JKToast.error(err.message); return; }
+        const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+        const summary = `${plural(imp.items, 'item')} (itself and everything under it), ${plural(imp.stock_rows, 'stock row')}, ${plural(imp.dc_lines, 'DC line')} across ${plural(imp.dcs_affected, 'DC')}`;
+        // Warning 1: what will be lost
+        openModal('Warning 1 of 3 — Delete permanently?', `
+          <div class="modal-hint" style="color:#b42318;">You are about to <b>permanently delete "${esc(name)}"</b>. This will remove ${summary}.</div>
+          <div class="modal-hint">Past ledgers and DCs will lose these entries. <b>This is permanent.</b></div>
+        `, [
+          { label: 'Cancel', onClick: () => closeModal() },
+          { label: 'I understand, continue', primary: true, onClick: () => {
+            // Warning 2: no undo
+            openModal('Warning 2 of 3 — This cannot be undone', `
+              <div class="modal-hint" style="color:#b42318;"><b>There is no undo and no recycle bin.</b> ${imp.dcs_removed ? `${plural(imp.dcs_removed, 'DC')} that would be left empty will be deleted entirely. ` : ''}Stock totals, value and reports will change immediately for everyone.</div>
+              <div class="modal-hint">Are you absolutely sure you want to delete <b>${esc(name)}</b>?</div>
+            `, [
+              { label: 'No, go back', onClick: () => closeModal() },
+              { label: 'Yes, I am sure', primary: true, onClick: () => {
+                // Warning 3: typed confirmation
+                openModal('Final warning 3 of 3 — Confirm by typing', `
+                  <div class="modal-hint" style="color:#b42318;">Last chance. Type the name exactly to delete forever: <b>${esc(name)}</b></div>
+                  <div class="field"><input autocomplete="off" id="f-confirm" placeholder="Type the name here" /></div>
+                  <div class="field error hidden" id="f-error"></div>
+                `, [
+                  { label: 'Cancel', onClick: () => closeModal() },
+                  { label: 'Delete forever', primary: true, onClick: async (b) => {
+                    if (document.getElementById('f-confirm').value.trim() !== name.trim()) {
+                      const e = document.getElementById('f-error'); e.textContent = 'Name does not match.'; e.classList.remove('hidden'); return;
+                    }
+                    b.disabled = true;
+                    try {
+                      await window.JKApi.deleteItem(id);
+                      closeModal(); JKToast.good('Deleted.');
+                      state.openActionId = null;
+                      renderTrees(document.getElementById('view-root'));
+                    } catch (err) { b.disabled = false; JKToast.error(err.message); }
+                  } },
+                ]);
+              } },
+            ]);
+          } },
+        ]);
+      };
     });
     wrap.querySelectorAll('[data-act="archive"]').forEach((btn) => {
       btn.onclick = async () => {

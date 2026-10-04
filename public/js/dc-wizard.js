@@ -55,11 +55,47 @@ window.JKDcWizard = (function () {
     overlay.id = 'active-dc-wizard';
     document.body.appendChild(overlay);
 
-    function close() { overlay.remove(); }
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKeyDown); }
+
+    // Physical keyboard for the quantity step: digits, ".", Backspace type
+    // into the keypad display; Enter = Continue; Escape = close. Ignored
+    // while the user is typing in a real text field (search, party, ...).
+    function onKeyDown(e) {
+      if (!overlay.isConnected) { document.removeEventListener('keydown', onKeyDown); return; }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (wiz.step !== 'qty') return;
+      const k = e.key;
+      if (/^[0-9]$/.test(k)) {
+        wiz.current.qty = (wiz.current.qty === '0' ? '' : wiz.current.qty) + k;
+      } else if (k === '.' || k === ',') {
+        if (!wiz.current.qty.includes('.')) wiz.current.qty = (wiz.current.qty || '0') + '.';
+      } else if (k === 'Backspace') {
+        wiz.current.qty = wiz.current.qty.slice(0, -1);
+      } else if (k === 'Delete' || k === 'Escape') {
+        if (k === 'Escape') { close(); } else wiz.current.qty = '';
+        e.preventDefault(); if (k === 'Escape') return; render(); return;
+      } else if (k === 'Enter') {
+        if (wiz.current.item_id && Number(wiz.current.qty) > 0) { commitCurrentLine(); wiz.step = 'final'; render(); }
+        e.preventDefault();
+        return;
+      } else if (k === '+') {
+        if (wiz.current.item_id && Number(wiz.current.qty) > 0) { commitCurrentLine(); wiz.step = 'item'; render(); }
+        e.preventDefault();
+        return;
+      } else {
+        return;
+      }
+      e.preventDefault();
+      render();
+    }
+    document.addEventListener('keydown', onKeyDown);
     function stepIndex() { return wiz.step === 'item' ? 0 : wiz.step === 'qty' ? 1 : 2; }
     function commitCurrentLine() {
       if (wiz.current.item_id && Number(wiz.current.qty) > 0) {
         wiz.lines.push({ item_id: wiz.current.item_id, qty: Number(wiz.current.qty) });
+        wiz.restore = null;
         wiz.current = { item_id: null, qty: '' };
         return true;
       }
@@ -106,8 +142,49 @@ window.JKDcWizard = (function () {
       wire();
     }
 
+    // "Already on this DC" strip, shown on the item and quantity steps so a
+    // mistaken line can be removed (x) or fixed (tap it) without starting over.
+    function renderLinesStrip() {
+      if (!wiz.lines.length) return '';
+      return `
+        <div class="dcwiz-lines-card" style="margin-bottom:14px;">
+          <div class="dcwiz-lines-head"><span>Already on this DC</span><span class="count">${wiz.lines.length} item${wiz.lines.length === 1 ? '' : 's'}</span></div>
+          ${wiz.lines.map((l, i) => {
+            const entry = entryFor(l.item_id);
+            return `
+              <div class="dcwiz-line-row">
+                <span class="info" data-edit="${i}" style="cursor:pointer;" title="Tap to change the quantity"><span class="name">${escapeHtml(entry?.node.name || '')}</span><span class="crumb">${escapeHtml(entry?.breadcrumb || '')}</span></span>
+                <span class="qty" data-edit="${i}" style="cursor:pointer;">${JKFmt.qty(l.qty)}</span>
+                <span class="unit">${escapeHtml(entry?.node.unit || '')}</span>
+                <button type="button" class="dcwiz-line-remove" data-i="${i}" title="Remove this item">&times;</button>
+              </div>`;
+          }).join('')}
+        </div>`;
+    }
+
+    function wireLines() {
+      overlay.querySelectorAll('.dcwiz-line-remove').forEach((b) => {
+        b.onclick = () => { wiz.lines.splice(Number(b.dataset.i), 1); render(); };
+      });
+      overlay.querySelectorAll('[data-edit]').forEach((el) => {
+        el.onclick = () => {
+          const i = Number(el.dataset.edit);
+          const l = wiz.lines[i];
+          if (!l) return;
+          // Pull the line back out for re-entry; confirming it re-adds it.
+          // Any half-entered current item is discarded.
+          wiz.lines.splice(i, 1);
+          wiz.restore = l;
+          wiz.current = { item_id: l.item_id, qty: String(l.qty) };
+          wiz.step = 'qty';
+          render();
+        };
+      });
+    }
+
     function renderItemStep() {
       return `
+        ${renderLinesStrip()}
         <input autocomplete="off" class="dcwiz-search" id="dcwiz-search" placeholder="Type to narrow the list" value="${escapeHtml(wiz.search)}" />
         <div class="dcwiz-tabs">
           <button type="button" class="dcwiz-tab ${wiz.kindTab === 'material' ? 'active' : ''}" data-kind="material">Materials</button>
@@ -152,6 +229,7 @@ window.JKDcWizard = (function () {
       const q = wiz.current.qty === '' ? 0 : Number(wiz.current.qty);
       const after = Math.max(isIn ? onHand + q : onHand - q, 0);
       return `
+        ${renderLinesStrip()}
         <div class="dcwiz-selected-card">
           <span class="name">${escapeHtml(entry?.node.name || '')}</span>
           <span class="crumb">${escapeHtml(entry?.breadcrumb || '')}</span>
@@ -169,6 +247,7 @@ window.JKDcWizard = (function () {
             <button type="button" class="dcwiz-key${k === 'back' ? ' back' : ''}" data-key="${k}">${k === 'back' ? '&#9003;' : k}</button>
           `).join('')}
         </div>
+        <div class="dcwiz-hint" style="opacity:.75;">Keyboard: type numbers, Backspace to erase, Enter to continue, + to add another item.</div>
         <div class="dcwiz-hint">On hand ${JKFmt.qty(onHand)} ${escapeHtml(entry?.node.unit || '')} &rarr; ${JKFmt.qty(after)} after this DC.</div>
       `;
     }
@@ -178,8 +257,8 @@ window.JKDcWizard = (function () {
         const entry = entryFor(l.item_id);
         return `
           <div class="dcwiz-line-row">
-            <span class="info"><span class="name">${escapeHtml(entry?.node.name || '')}</span><span class="crumb">${escapeHtml(entry?.breadcrumb || '')}</span></span>
-            <span class="qty">${JKFmt.qty(l.qty)}</span>
+            <span class="info" data-edit="${i}" style="cursor:pointer;" title="Tap to change the quantity"><span class="name">${escapeHtml(entry?.node.name || '')}</span><span class="crumb">${escapeHtml(entry?.breadcrumb || '')}</span></span>
+            <span class="qty" data-edit="${i}" style="cursor:pointer;">${JKFmt.qty(l.qty)}</span>
             <span class="unit">${escapeHtml(entry?.node.unit || '')}</span>
             <button type="button" class="dcwiz-line-remove" data-i="${i}" title="Remove">&times;</button>
           </div>
@@ -235,6 +314,7 @@ window.JKDcWizard = (function () {
 
     function wire() {
       overlay.querySelector('#dcwiz-close').onclick = close;
+      wireLines();
 
       if (wiz.step === 'item') {
         const searchEl = overlay.querySelector('#dcwiz-search');
@@ -248,7 +328,7 @@ window.JKDcWizard = (function () {
       }
 
       if (wiz.step === 'qty') {
-        overlay.querySelector('#dcwiz-back').onclick = () => { wiz.step = 'item'; render(); };
+        overlay.querySelector('#dcwiz-back').onclick = () => { if (wiz.restore) { wiz.lines.push(wiz.restore); wiz.restore = null; wiz.current = { item_id: null, qty: '' }; } wiz.step = 'item'; render(); };
         overlay.querySelectorAll('.dcwiz-chip').forEach((b) => {
           b.onclick = () => {
             if (b.dataset.clear) wiz.current.qty = '';

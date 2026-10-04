@@ -268,6 +268,26 @@ router.patch('/reorder', requireAdmin, async (req, res, next) => {
   }
 });
 
+// GET /api/items/:id/delete-impact — admin only: what a permanent delete
+// of this item (and everything under it) would remove. Changes nothing.
+router.get('/:id/delete-impact', requireAdmin, async (req, res, next) => {
+  try {
+    const { data, error } = await supabaseAdmin.schema('inventory').rpc('delete_item_subtree', { p_id: req.params.id, p_dry_run: true });
+    if (error) return res.status(400).json({ error: error.message });
+    res.json(data);
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/items/:id — admin only: PERMANENT delete of the item and its
+// whole subtree, including DC lines / stock / prices / thresholds.
+router.delete('/:id', requireAdmin, async (req, res, next) => {
+  try {
+    const { data, error } = await supabaseAdmin.schema('inventory').rpc('delete_item_subtree', { p_id: req.params.id, p_dry_run: false });
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ ok: true, ...data });
+  } catch (err) { next(err); }
+});
+
 // PATCH /api/items/:id — admin only: rename, reparent, archive, set price.
 // body: any of { name, parent_id, is_active, price }
 router.patch('/:id', requireAdmin, async (req, res, next) => {
