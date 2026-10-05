@@ -649,6 +649,21 @@
   // location (not a dropdown); opening one shows its full-screen ledger
   // overlay. Replicated one-to-one from the mockup's book screens.
   // ---------------------------------------------------------------
+  // Flattens a tree into its leaf items with their category path.
+  function flattenLeavesWithPath(nodes) {
+    const out = [];
+    (function walk(list, chain) {
+      list.forEach((n) => {
+        if (n.isLeaf) {
+          out.push({ node: n, parentName: chain.length ? chain[chain.length - 1] : null, topName: chain.length ? chain[0] : n.name, breadcrumb: chain.join(' \u203a ') });
+        } else {
+          walk(n.children, chain.concat(n.name));
+        }
+      });
+    })(nodes, []);
+    return out;
+  }
+
   let bookLeaves = [];
   let bookSearch = '';
 
