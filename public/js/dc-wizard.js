@@ -84,11 +84,11 @@ window.JKDcWizard = (function () {
       } else if (k === 'Delete') {
         wiz.current.qty = '';
       } else if (k === 'Enter') {
-        if (wiz.current.item_id && Number(wiz.current.qty) > 0) { commitCurrentLine(); wiz.step = 'final'; render(); }
+        if (currentQtyValid()) { commitCurrentLine(); wiz.step = 'final'; render(); }
         e.preventDefault();
         return;
       } else if (k === '+') {
-        if (wiz.current.item_id && Number(wiz.current.qty) > 0) { commitCurrentLine(); wiz.step = 'item'; render(); }
+        if (currentQtyValid()) { commitCurrentLine(); wiz.step = 'item'; render(); }
         e.preventDefault();
         return;
       } else {
@@ -99,8 +99,21 @@ window.JKDcWizard = (function () {
     }
     document.addEventListener('keydown', onKeyDown);
     function stepIndex() { return wiz.step === 'item' ? 0 : wiz.step === 'qty' ? 1 : 2; }
+    // Stock still free to send out for an item: on hand minus what the same
+    // item already has on this DC. Input DCs have no upper limit.
+    function availableFor(itemId) {
+      const entry = entryFor(itemId);
+      const onHand = Number(entry?.node.qtyByLocation?.[location.id] || 0);
+      const used = wiz.lines.filter((l) => l.item_id === itemId).reduce((s, l) => s + Number(l.qty), 0);
+      return Math.max(onHand - used, 0);
+    }
+    function currentQtyValid() {
+      const q = Number(wiz.current.qty);
+      if (!wiz.current.item_id || !(q > 0)) return false;
+      return isIn || q <= availableFor(wiz.current.item_id);
+    }
     function commitCurrentLine() {
-      if (wiz.current.item_id && Number(wiz.current.qty) > 0) {
+      if (currentQtyValid()) {
         wiz.lines.push({ item_id: wiz.current.item_id, qty: Number(wiz.current.qty) });
         wiz.restore = null;
         wiz.search = '';
@@ -220,10 +233,16 @@ window.JKDcWizard = (function () {
 
     function onHandHint() {
       const entry = entryFor(wiz.current.item_id);
+      const unit = escapeHtml(entry?.node.unit || '');
       const onHand = Number(entry?.node.qtyByLocation?.[location.id] || 0);
       const q = wiz.current.qty === '' ? 0 : Number(wiz.current.qty);
-      const after = Math.max(isIn ? onHand + q : onHand - q, 0);
-      return `On hand ${JKFmt.qty(onHand)} ${escapeHtml(entry?.node.unit || '')} &rarr; ${JKFmt.qty(after)} after this DC.`;
+      if (isIn) return `On hand ${JKFmt.qty(onHand)} ${unit} &rarr; ${JKFmt.qty(onHand + q)} after this DC.`;
+      const avail = availableFor(wiz.current.item_id);
+      const onDc = onHand - avail;
+      if (q > avail) {
+        return `<span style="color:var(--bad);font-weight:600;">Only ${JKFmt.qty(avail)} ${unit} available${onDc > 0 ? ` (${JKFmt.qty(onDc)} already on this DC)` : ''} &mdash; lower the quantity or go Back.</span>`;
+      }
+      return `On hand ${JKFmt.qty(onHand)} ${unit}${onDc > 0 ? ` (${JKFmt.qty(onDc)} already on this DC)` : ''} &rarr; ${JKFmt.qty(avail - q)} left after this.`;
     }
 
     // Update the quantity screen in place (no full re-render, so no scroll jump).
@@ -248,9 +267,6 @@ window.JKDcWizard = (function () {
 
     function renderQtyStep() {
       const entry = entryFor(wiz.current.item_id);
-      const onHand = Number(entry?.node.qtyByLocation?.[location.id] || 0);
-      const q = wiz.current.qty === '' ? 0 : Number(wiz.current.qty);
-      const after = Math.max(isIn ? onHand + q : onHand - q, 0);
       return `
         <div class="dcwiz-selected-card">
           <span class="name">${escapeHtml(entry?.node.name || '')}</span>
@@ -324,11 +340,12 @@ window.JKDcWizard = (function () {
           <button type="button" class="dcwiz-cta" disabled>Choose an item</button>`;
       }
       if (wiz.step === 'qty') {
-        const valid = wiz.current.item_id && Number(wiz.current.qty) > 0;
+        const valid = currentQtyValid();
+        const tooMuch = !isIn && wiz.current.item_id && Number(wiz.current.qty) > availableFor(wiz.current.item_id);
         return `
           <button type="button" class="dcwiz-back" id="dcwiz-back">Back</button>
           <button type="button" class="dcwiz-plusitem" id="dcwiz-plusitem" ${valid ? '' : 'disabled'}>+ Item</button>
-          <button type="button" class="dcwiz-cta ${valid ? 'active' : ''}" id="dcwiz-continue" ${valid ? '' : 'disabled'} style="${valid ? `background:${accentVar}; border-color:${accentVar};` : ''}">${valid ? 'Continue' : 'Enter a quantity'}</button>
+          <button type="button" class="dcwiz-cta ${valid ? 'active' : ''}" id="dcwiz-continue" ${valid ? '' : 'disabled'} style="${valid ? `background:${accentVar}; border-color:${accentVar};` : ''}">${valid ? 'Continue' : tooMuch ? 'Not enough stock' : 'Enter a quantity'}</button>
         `;
       }
       const valid = finalIsValid();

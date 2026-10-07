@@ -14,6 +14,24 @@ const router = express.Router();
  * stock rows apply — there's no longer a "same leaf at both locations"
  * case, but admin's global view (locationIds = null) still spans both trees.
  */
+
+// supabase-js sends `.in(col, [...])` as part of the URL, and PostgREST
+// rejects URLs over ~16KB. A global (admin, all-locations) tree has enough
+// items to blow past that, so large id lists are queried in small chunks.
+async function selectInChunks(table, columns, column, ids, size = 100) {
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size));
+  const results = await Promise.all(chunks.map((chunk) =>
+    supabaseAdmin.schema('inventory').from(table).select(columns).in(column, chunk)
+  ));
+  const rows = [];
+  for (const r of results) {
+    if (r.error) return { data: null, error: r.error };
+    rows.push(...r.data);
+  }
+  return { data: rows, error: null };
+}
+
 async function buildTree({ kind, locationIds, includePrice }) {
   let itemsQuery = supabaseAdmin
     .schema('inventory')
@@ -41,9 +59,9 @@ async function buildTree({ kind, locationIds, includePrice }) {
   if (ids.length) {
     // stock and price rows both only depend on `ids`, not on each other —
     // fire them together instead of one after the other.
-    const stockQuery = supabaseAdmin.schema('inventory').from('stock').select('item_id, location_id, qty').in('item_id', ids);
+    const stockQuery = selectInChunks('stock', 'item_id, location_id, qty', 'item_id', ids);
     const priceQuery = includePrice
-      ? supabaseAdmin.schema('inventory').from('item_prices').select('item_id, price').in('item_id', ids)
+      ? selectInChunks('item_prices', 'item_id, price', 'item_id', ids)
       : Promise.resolve({ data: [], error: null });
 
     const [{ data: stockRows, error: stockError }, { data: priceRows, error: priceError }] = await Promise.all([
