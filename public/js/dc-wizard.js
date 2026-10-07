@@ -34,8 +34,8 @@ window.JKDcWizard = (function () {
       window.JKApi.items({ kind: 'material', location: location.id }),
       window.JKApi.items({ kind: 'consumable', location: location.id }),
     ]);
-    const leavesByKind = { material: flattenLeavesWithPath(materials), consumable: flattenLeavesWithPath(consumables) };
-    const allEntries = [...leavesByKind.material, ...leavesByKind.consumable];
+    const allEntries = [...flattenLeavesWithPath(materials), ...flattenLeavesWithPath(consumables)];
+    const sortedEntries = [...allEntries].sort((a, b) => a.node.name.localeCompare(b.node.name));
     function entryFor(id) { return allEntries.find((x) => x.node.id === id); }
 
     const isIn = direction === 'in';
@@ -43,7 +43,6 @@ window.JKDcWizard = (function () {
 
     const wiz = {
       step: presetItemId ? 'qty' : 'item',
-      kindTab: (presetItemId && entryFor(presetItemId)?.node.kind) || 'material',
       search: '',
       lines: [],
       current: { item_id: presetItemId || null, qty: '' },
@@ -64,7 +63,16 @@ window.JKDcWizard = (function () {
       if (!overlay.isConnected) { document.removeEventListener('keydown', onKeyDown); return; }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (wiz.step === 'final') {
+        // Enter records the DC (works from the text fields too); "+" adds another item.
+        // Enter on a focused button (Back, x, ...) keeps its own meaning.
+        if (e.key === 'Enter' && finalIsValid() && !(t && t.tagName === 'BUTTON' && t.id !== 'dcwiz-submit')) { e.preventDefault(); const sb = overlay.querySelector('#dcwiz-submit'); if (sb) sb.click(); }
+        else if (e.key === '+' && !typing) { e.preventDefault(); wiz.step = 'item'; render(); }
+        return;
+      }
+      if (typing) return;
       if (wiz.step !== 'qty') return;
       const k = e.key;
       if (/^[0-9]$/.test(k)) {
@@ -73,9 +81,8 @@ window.JKDcWizard = (function () {
         if (!wiz.current.qty.includes('.')) wiz.current.qty = (wiz.current.qty || '0') + '.';
       } else if (k === 'Backspace') {
         wiz.current.qty = wiz.current.qty.slice(0, -1);
-      } else if (k === 'Delete' || k === 'Escape') {
-        if (k === 'Escape') { close(); } else wiz.current.qty = '';
-        e.preventDefault(); if (k === 'Escape') return; render(); return;
+      } else if (k === 'Delete') {
+        wiz.current.qty = '';
       } else if (k === 'Enter') {
         if (wiz.current.item_id && Number(wiz.current.qty) > 0) { commitCurrentLine(); wiz.step = 'final'; render(); }
         e.preventDefault();
@@ -88,7 +95,7 @@ window.JKDcWizard = (function () {
         return;
       }
       e.preventDefault();
-      render();
+      refreshQty();
     }
     document.addEventListener('keydown', onKeyDown);
     function stepIndex() { return wiz.step === 'item' ? 0 : wiz.step === 'qty' ? 1 : 2; }
@@ -96,6 +103,7 @@ window.JKDcWizard = (function () {
       if (wiz.current.item_id && Number(wiz.current.qty) > 0) {
         wiz.lines.push({ item_id: wiz.current.item_id, qty: Number(wiz.current.qty) });
         wiz.restore = null;
+        wiz.search = '';
         wiz.current = { item_id: null, qty: '' };
         return true;
       }
@@ -115,6 +123,9 @@ window.JKDcWizard = (function () {
     }
 
     function render() {
+      const oldBody = overlay.querySelector('.dcwiz-body');
+      const keepScroll = oldBody && overlay.dataset.step === wiz.step ? oldBody.scrollTop : 0;
+      overlay.dataset.step = wiz.step;
       overlay.innerHTML = `
         <div class="dcwiz-head">
           <div class="dcwiz-head-inner">
@@ -140,6 +151,8 @@ window.JKDcWizard = (function () {
         <div class="dcwiz-foot">${renderFoot()}</div>
       `;
       wire();
+      const nb = overlay.querySelector('.dcwiz-body');
+      if (nb) nb.scrollTop = keepScroll;
     }
 
     // "Already on this DC" strip, shown on the item and quantity steps so a
@@ -147,9 +160,9 @@ window.JKDcWizard = (function () {
     function renderLinesStrip() {
       if (!wiz.lines.length) return '';
       return `
-        <div class="dcwiz-lines-card" style="margin-bottom:14px;">
+        <div class="dcwiz-lines-card" style="margin-top:14px;">
           <div class="dcwiz-lines-head"><span>Already on this DC</span><span class="count">${wiz.lines.length} item${wiz.lines.length === 1 ? '' : 's'}</span></div>
-          ${wiz.lines.map((l, i) => {
+          ${wiz.lines.map((l, i) => [l, i]).reverse().map(([l, i]) => {
             const entry = entryFor(l.item_id);
             return `
               <div class="dcwiz-line-row">
@@ -184,43 +197,53 @@ window.JKDcWizard = (function () {
 
     function renderItemStep() {
       return `
-        ${renderLinesStrip()}
-        <input autocomplete="off" class="dcwiz-search" id="dcwiz-search" placeholder="Type to narrow the list" value="${escapeHtml(wiz.search)}" />
-        <div class="dcwiz-tabs">
-          <button type="button" class="dcwiz-tab ${wiz.kindTab === 'material' ? 'active' : ''}" data-kind="material">Materials</button>
-          <button type="button" class="dcwiz-tab ${wiz.kindTab === 'consumable' ? 'active' : ''}" data-kind="consumable">Consumables</button>
-        </div>
+        <input autocomplete="off" class="dcwiz-search" id="dcwiz-search" placeholder="Type to search · ↑↓ then Enter to pick" value="${escapeHtml(wiz.search)}" />
         <div id="dcwiz-item-list">${renderItemListHtml()}</div>
+        ${renderLinesStrip()}
       `;
     }
 
     function renderItemListHtml() {
-      const entries = leavesByKind[wiz.kindTab];
       const q = wiz.search.trim().toLowerCase();
-      const filtered = q ? entries.filter((x) => x.node.name.toLowerCase().includes(q)) : entries;
-      const groups = [];
-      filtered.forEach((x) => {
-        let g = groups.find((g) => g.parentName === x.parentName);
-        if (!g) { g = { parentName: x.parentName, topName: x.topName, items: [] }; groups.push(g); }
-        g.items.push(x);
-      });
-      if (!groups.length) return `<div class="empty-state">No items found.</div>`;
-      return groups.map((g) => `
-        <div class="dcwiz-group">
-          <div class="dcwiz-group-head">
-            <span class="name">${escapeHtml(g.parentName || g.topName)}</span>
-            ${g.parentName && g.parentName !== g.topName ? `<span class="top">${escapeHtml(g.topName)}</span>` : ''}
-            <span class="spacer"></span>
-            <span class="count">${g.items.length} item${g.items.length === 1 ? '' : 's'}</span>
-          </div>
-          ${g.items.map((x) => `
-            <button type="button" class="dcwiz-item-row" data-id="${x.node.id}">
-              <span class="name">${escapeHtml(x.node.name)}</span>
-              <span class="qty">${JKFmt.qty(x.node.qtyByLocation?.[location.id] || 0)}<span class="unit"> ${escapeHtml(x.node.unit)}</span></span>
-            </button>
-          `).join('')}
-        </div>
-      `).join('');
+      const filtered = q ? sortedEntries.filter((x) => (x.node.name + ' ' + (x.breadcrumb || '')).toLowerCase().includes(q)) : sortedEntries;
+      if (!filtered.length) return `<div class="empty-state">No items found.</div>`;
+      return filtered.map((x) => {
+        const onHand = Number(x.node.qtyByLocation?.[location.id] || 0);
+        const zero = !isIn && onHand <= 0;
+        return `
+          <button type="button" class="dcwiz-item-row${zero ? ' dcwiz-zero' : ''}" data-id="${x.node.id}" ${zero ? 'disabled' : ''}>
+            <span class="name-wrap"><span class="name">${escapeHtml(x.node.name)}</span><span class="crumb">${escapeHtml(x.breadcrumb || '')}</span></span>
+            <span class="qty">${JKFmt.qty(onHand)}<span class="unit"> ${escapeHtml(x.node.unit)}</span></span>
+          </button>`;
+      }).join('');
+    }
+
+    function onHandHint() {
+      const entry = entryFor(wiz.current.item_id);
+      const onHand = Number(entry?.node.qtyByLocation?.[location.id] || 0);
+      const q = wiz.current.qty === '' ? 0 : Number(wiz.current.qty);
+      const after = Math.max(isIn ? onHand + q : onHand - q, 0);
+      return `On hand ${JKFmt.qty(onHand)} ${escapeHtml(entry?.node.unit || '')} &rarr; ${JKFmt.qty(after)} after this DC.`;
+    }
+
+    // Update the quantity screen in place (no full re-render, so no scroll jump).
+    function refreshQty() {
+      if (wiz.step !== 'qty') { render(); return; }
+      const num = overlay.querySelector('.dcwiz-keypad-display .num');
+      if (!num) { render(); return; }
+      num.textContent = wiz.current.qty === '' ? '0' : wiz.current.qty;
+      const hint = overlay.querySelector('#dcwiz-onhand-hint');
+      if (hint) hint.innerHTML = onHandHint();
+      overlay.querySelector('.dcwiz-foot').innerHTML = renderFoot();
+      wireQtyFoot();
+    }
+
+    function wireQtyFoot() {
+      overlay.querySelector('#dcwiz-back').onclick = () => { if (wiz.restore) { wiz.lines.push(wiz.restore); wiz.restore = null; wiz.current = { item_id: null, qty: '' }; } wiz.step = 'item'; render(); };
+      const plusBtn = overlay.querySelector('#dcwiz-plusitem');
+      if (plusBtn) plusBtn.onclick = () => { commitCurrentLine(); wiz.step = 'item'; render(); };
+      const contBtn = overlay.querySelector('#dcwiz-continue');
+      if (contBtn) contBtn.onclick = () => { commitCurrentLine(); wiz.step = 'final'; render(); };
     }
 
     function renderQtyStep() {
@@ -229,7 +252,6 @@ window.JKDcWizard = (function () {
       const q = wiz.current.qty === '' ? 0 : Number(wiz.current.qty);
       const after = Math.max(isIn ? onHand + q : onHand - q, 0);
       return `
-        ${renderLinesStrip()}
         <div class="dcwiz-selected-card">
           <span class="name">${escapeHtml(entry?.node.name || '')}</span>
           <span class="crumb">${escapeHtml(entry?.breadcrumb || '')}</span>
@@ -248,7 +270,8 @@ window.JKDcWizard = (function () {
           `).join('')}
         </div>
         <div class="dcwiz-hint" style="opacity:.75;">Keyboard: type numbers, Backspace to erase, Enter to continue, + to add another item.</div>
-        <div class="dcwiz-hint">On hand ${JKFmt.qty(onHand)} ${escapeHtml(entry?.node.unit || '')} &rarr; ${JKFmt.qty(after)} after this DC.</div>
+        <div class="dcwiz-hint" id="dcwiz-onhand-hint">${onHandHint()}</div>
+        ${renderLinesStrip()}
       `;
     }
 
@@ -321,24 +344,54 @@ window.JKDcWizard = (function () {
 
       if (wiz.step === 'item') {
         const searchEl = overlay.querySelector('#dcwiz-search');
-        searchEl.oninput = debounce((e) => {
-          wiz.search = e.target.value;
-          overlay.querySelector('#dcwiz-item-list').innerHTML = renderItemListHtml();
+        // The list re-filters shortly after typing stops; Enter flushes any
+        // pending re-filter first so it never picks from a stale list.
+        let listStale = false;
+        function refilter() {
+          const listEl = overlay.querySelector('#dcwiz-item-list');
+          if (!listEl || !listStale) return;
+          listStale = false;
+          listEl.innerHTML = renderItemListHtml();
           wireItemList();
-        }, 120);
-        overlay.querySelectorAll('.dcwiz-tab').forEach((b) => { b.onclick = () => { wiz.kindTab = b.dataset.kind; render(); }; });
+          setActiveRow(0);
+        }
+        const refilterSoon = debounce(refilter, 120);
+        searchEl.oninput = (e) => {
+          wiz.search = e.target.value;
+          listStale = true;
+          refilterSoon();
+        };
+        // Keyboard: type to filter, Up/Down to move, Enter to pick.
+        searchEl.onkeydown = (e) => {
+          const rows = [...overlay.querySelectorAll('.dcwiz-item-row:not([disabled])')];
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!rows.length) return;
+            const cur = rows.findIndex((r) => r.classList.contains('dcwiz-active'));
+            setActiveRow(Math.max(0, Math.min(rows.length - 1, cur + (e.key === 'ArrowDown' ? 1 : -1))));
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const wasStale = listStale;
+            refilter();
+            const rowsNow = [...overlay.querySelectorAll('.dcwiz-item-row:not([disabled])')];
+            const act = (wasStale ? rowsNow[0] : rowsNow.find((r) => r.classList.contains('dcwiz-active'))) || rowsNow[0];
+            if (act) act.click();
+            else if (!searchEl.value.trim() && wiz.lines.length) { wiz.step = 'final'; render(); }
+          }
+        };
+        setActiveRow(0);
+        if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) searchEl.focus();
         wireItemList();
         const toReview = overlay.querySelector('#dcwiz-to-review');
         if (toReview) toReview.onclick = () => { wiz.step = 'final'; render(); };
       }
 
       if (wiz.step === 'qty') {
-        overlay.querySelector('#dcwiz-back').onclick = () => { if (wiz.restore) { wiz.lines.push(wiz.restore); wiz.restore = null; wiz.current = { item_id: null, qty: '' }; } wiz.step = 'item'; render(); };
         overlay.querySelectorAll('.dcwiz-chip').forEach((b) => {
           b.onclick = () => {
             if (b.dataset.clear) wiz.current.qty = '';
             else wiz.current.qty = String((Number(wiz.current.qty) || 0) + Number(b.dataset.add));
-            render();
+            refreshQty();
           };
         });
         overlay.querySelectorAll('.dcwiz-key').forEach((b) => {
@@ -347,13 +400,10 @@ window.JKDcWizard = (function () {
             if (k === 'back') wiz.current.qty = wiz.current.qty.slice(0, -1);
             else if (k === '.') { if (!wiz.current.qty.includes('.')) wiz.current.qty += '.'; }
             else wiz.current.qty = (wiz.current.qty === '0' ? '' : wiz.current.qty) + k;
-            render();
+            refreshQty();
           };
         });
-        const plusBtn = overlay.querySelector('#dcwiz-plusitem');
-        if (plusBtn) plusBtn.onclick = () => { commitCurrentLine(); wiz.step = 'item'; render(); };
-        const contBtn = overlay.querySelector('#dcwiz-continue');
-        if (contBtn) contBtn.onclick = () => { commitCurrentLine(); wiz.step = 'final'; render(); };
+        wireQtyFoot();
       }
 
       if (wiz.step === 'final') {
@@ -387,6 +437,13 @@ window.JKDcWizard = (function () {
           }
         };
       }
+    }
+
+    function setActiveRow(i) {
+      const rows = [...overlay.querySelectorAll('.dcwiz-item-row:not([disabled])')];
+      overlay.querySelectorAll('.dcwiz-item-row.dcwiz-active').forEach((r) => r.classList.remove('dcwiz-active'));
+      const r = rows[i];
+      if (r) { r.classList.add('dcwiz-active'); r.scrollIntoView({ block: 'nearest' }); }
     }
 
     function wireItemList() {

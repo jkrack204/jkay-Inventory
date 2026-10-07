@@ -556,22 +556,6 @@
         renderAdminTree(bodyEl, locId);
       };
     });
-    // Dragging is only meaningful against the unfiltered, unsearched
-    // sibling order — skip wiring it while a search or a single branch
-    // tab narrows what's on screen, so a drop can't silently reorder
-    // against a list the admin isn't actually looking at.
-    if (!q) {
-      wireDragReorder(
-        bodyEl,
-        (parentKey) => {
-          if (parentKey === `loc:${locId}`) return state.branch ? null : currentTree;
-          const parentId = parentKey.slice(5);
-          const parent = findNodeById(currentTree, parentId);
-          return parent ? parent.children : null;
-        },
-        () => renderAdminTree(bodyEl, locId)
-      );
-    }
   }
 
   // Location drill-in tree: same connector-line row shape as the location
@@ -584,14 +568,11 @@
     const isLeaf = node.isLeaf;
     const low = isLeaf && qty <= 0;
     const connectors = connectorsHtml(depth, isLast, parentChain);
-    const dragAttrs = `data-drag-id="${node.id}" data-drag-parent="${esc(parentKey)}"`;
-    const handle = `<span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>`;
 
     if (isLeaf) {
       out.push(`
-        <div class="tree-row leaf${low ? ' low' : ''}" ${dragAttrs}>
+        <div class="tree-row leaf${low ? ' low' : ''}">
           <div class="row-main">
-            ${handle}
             ${connectors}
             <span class="disclosure"><span class="status-dot${low ? ' bad' : ''}"></span></span>
             <span class="names">
@@ -610,9 +591,8 @@
     const expanded = state.expanded.has(node.id);
     const isTop = depth === 0;
     out.push(`
-      <div class="tree-row parent${isTop ? ' top-parent' : ''}" ${dragAttrs}>
+      <div class="tree-row parent${isTop ? ' top-parent' : ''}">
         <div class="row-main">
-          ${handle}
           ${connectors}
           <span class="disclosure"><button class="toggle${expanded ? ' open' : ''}" data-id="${node.id}">&#9654;</button></span>
           <span class="names">

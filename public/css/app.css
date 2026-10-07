@@ -1052,3 +1052,9 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
   .ar-item { white-space: normal; font-size: 15px; }
   .ar-sub { white-space: normal; font-size: 12.5px; }
 }
+
+/* DC wizard: flat item list + zero-stock rows */
+.dcwiz-item-row .name-wrap{display:flex;flex-direction:column;min-width:0;flex:1;text-align:left}
+.dcwiz-item-row .name-wrap .crumb{font-size:11.5px;color:var(--text-3,#888);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dcwiz-item-row.dcwiz-zero{opacity:.45;cursor:not-allowed}
+.dcwiz-item-row.dcwiz-active{outline:2px solid var(--accent);outline-offset:-2px;background:var(--surface-2,rgba(128,128,128,.12))}
