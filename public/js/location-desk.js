@@ -83,6 +83,7 @@
           <div class="title">${escapeHtml(LOCATION_NAME)}</div>
         </div>
         <div class="spacer"></div>
+        <div class="nav-actions">
         ${state.view !== 'tree' ? `<button class="btn btn-back" id="btn-desk-home">&larr; Desk</button>` : ''}
         <span class="status-pill"><span class="dot dot-good"></span>${escapeHtml(OTHER_NAME)} keeps its own stock</span>
         <button class="btn${state.view === 'peek' ? ' active' : ''}" id="btn-peek-nav">${escapeHtml(OTHER_NAME)} stock</button>
@@ -91,6 +92,7 @@
         <span id="alerts-nav-slot"><button class="btn${state.view === 'alerts' ? ' active' : ''}" id="btn-alerts-nav">Alerts</button></span>
         <button class="btn-gear" id="btn-settings" title="Settings">&#9881;</button>
         <button class="btn icon" id="btn-signout" title="Sign out">&#8594;</button>
+        </div>
       </header>
       <div class="page" id="view-root"></div>
     `;

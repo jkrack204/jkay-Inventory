@@ -963,3 +963,58 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
   .tree-head .col-qty, .tree-row .col-qty { flex: 0 0 72px !important; }
   .tree-head .col-value, .tree-row .col-value { flex: 0 0 80px !important; }
 }
+
+/* ---- Phone layout, round 2: operator desks (Fab / Finished) ---- */
+@media (max-width: 720px) {
+  /* header: logo + location on row 1, nav buttons in one swipeable row */
+  .topbar { align-items: center; }
+  .topbar .spacer { display: none; }
+  .topbar .status-pill { display: none; }
+  .topbar .nav-actions { flex: 1 1 100%; flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; gap: 6px; }
+  .topbar .nav-actions > *, .topbar .nav-actions .btn { flex: 0 0 auto; white-space: nowrap; }
+  .topbar .nav-actions #alerts-nav-slot { flex: 0 0 auto; }
+
+  /* per-item In/Out buttons: smaller, so the item name keeps its room */
+  .tree-row .col-actions { flex: 0 0 auto; gap: 4px; }
+  .tree-row .mini-btn { width: 38px; height: 38px; }
+  .tree-row .col-qty .unit { font-size: 11.5px; }
+
+  /* inventory book list: only item + on hand + DC count */
+  .book-list-head .bkcol-onhand, .book-row .bkcol-onhand { flex: 0 0 84px; }
+  .book-list-head .bkcol-dcs, .book-row .bkcol-dcs { flex: 0 0 40px; }
+  .book-toolbar { padding: 10px; }
+  .book-row { padding-left: 10px; padding-right: 10px; }
+
+  /* section headers (Inventory book, My DCs, Alerts) wrap neatly */
+  .section-head { align-items: flex-start; }
+  .section-head .spacer { display: none; }
+  .section-head .btn { margin-left: auto; }
+}
+
+/* ---- Phone layout, round 3: deep tree rows + header height ---- */
+@media (max-width: 720px) {
+  /* header scrolls away with the page instead of eating the top of the screen */
+  .topbar { position: static; }
+  .topbar .nav-actions { scrollbar-width: none; }
+  .topbar .nav-actions::-webkit-scrollbar { display: none; }
+  .brand-mark, .brand-mark img { height: 26px; }
+
+  /* item names wrap fully (no "4 FEET BACKS…" cut-off) */
+  .tree-row .item-name { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.25; }
+  .tree-row .item-sub { font-size: 12px; }
+  /* tighter indentation per depth level, smaller disclosure/dot column */
+  .tree-row .connector { width: 12px; }
+  .tree-row .connector .vline, .tree-row .connector .corner { left: 6px; }
+  .tree-row .disclosure { width: 26px; }
+  .tree-row .toggle { transform-origin: center; }
+  /* quantity: number on top, unit underneath, narrower column */
+  .tree-head .col-qty, .tree-row .col-qty { flex: 0 0 58px !important; line-height: 1.15; }
+  .tree-row .col-qty .unit { display: block; margin-left: 0; font-size: 11px; }
+  .tree-row .col-actions { gap: 3px; }
+  .tree-row .mini-btn { width: 34px; height: 36px; }
+  .tree-toolbar #btn-collapse { white-space: nowrap; flex: 0 0 auto; }
+}
+@media (max-width: 720px) {
+  /* keep On-hand numbers of parents and items in one column */
+  .tree-row .col-actions { flex: 0 0 74px; }
+}
