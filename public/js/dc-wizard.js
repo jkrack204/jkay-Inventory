@@ -295,7 +295,10 @@ window.JKDcWizard = (function () {
 
     function renderFoot() {
       if (wiz.step === 'item') {
-        return `<button type="button" class="dcwiz-cta" disabled>Choose an item</button>`;
+        // Once the DC has lines, offer a way straight back to the review page.
+        return `
+          ${wiz.lines.length ? `<button type="button" class="dcwiz-back" id="dcwiz-to-review">&larr; Back to review (${wiz.lines.length})</button>` : ''}
+          <button type="button" class="dcwiz-cta" disabled>Choose an item</button>`;
       }
       if (wiz.step === 'qty') {
         const valid = wiz.current.item_id && Number(wiz.current.qty) > 0;
@@ -325,6 +328,8 @@ window.JKDcWizard = (function () {
         }, 120);
         overlay.querySelectorAll('.dcwiz-tab').forEach((b) => { b.onclick = () => { wiz.kindTab = b.dataset.kind; render(); }; });
         wireItemList();
+        const toReview = overlay.querySelector('#dcwiz-to-review');
+        if (toReview) toReview.onclick = () => { wiz.step = 'final'; render(); };
       }
 
       if (wiz.step === 'qty') {
