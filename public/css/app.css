@@ -959,7 +959,6 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
 }
 
 @media (max-width: 420px) {
-  .summary-card { flex: 1 1 100%; }
   .tree-head .col-qty, .tree-row .col-qty { flex: 0 0 72px !important; }
   .tree-head .col-value, .tree-row .col-value { flex: 0 0 80px !important; }
 }
@@ -1017,4 +1016,39 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
 @media (max-width: 720px) {
   /* keep On-hand numbers of parents and items in one column */
   .tree-row .col-actions { flex: 0 0 74px; }
+}
+
+/* ---- Phone layout, round 4: admin screens ---- */
+@media (max-width: 720px) {
+  /* home: dark "Total stock" bar */
+  .total-bar { flex-wrap: wrap; gap: 8px 16px; padding: 14px 16px; }
+  .total-bar .spacer { display: none; }
+  .total-bar .stats { gap: 22px; flex-wrap: wrap; width: 100%; }
+  .total-bar .stat-value { font-size: 19px; }
+
+  /* prices: name on its own line, input + value underneath */
+  .price-item-row { flex-wrap: wrap; gap: 6px 10px; padding: 10px 12px; }
+  .price-item-row .p-left { flex: 1 1 100%; }
+  .price-item-row .p-name, .price-item-row .p-crumb { white-space: normal; }
+  .price-item-row .p-mid { flex: 1 1 auto; }
+  .price-item-row .p-input { width: 100px; height: 42px; font-size: 16px; }
+  .price-item-row .p-unit { width: auto; }
+  .price-item-row .p-right { flex: 0 0 auto; margin-left: auto; }
+  .price-loc-head { padding: 12px 14px; gap: 6px 10px; }
+  .price-loc-head .loc-name { font-size: 19px; }
+  .price-cat-head { padding: 11px 14px; }
+  .price-intro { padding: 16px; }
+  .price-intro .search-pill { min-width: 0; width: 100%; }
+
+  /* activity / DC log rows: header line, item line, numbers line */
+  .activity-row { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 10px; padding: 10px 12px; }
+  .activity-row > * { flex: 0 0 auto !important; width: auto !important; padding-left: 0 !important; text-align: left !important; min-width: 0; }
+  .activity-row > .ar-dc { order: 1; flex: 1 1 auto !important; }
+  .activity-row > .ar-when { order: 2; font-size: 12px; }
+  .activity-row > .ar-main { order: 3; flex: 1 1 100% !important; }
+  .activity-row > .ar-qty { order: 4; font-size: 15px; }
+  .activity-row > .ar-value { order: 5; margin-left: auto; font-size: 14px; }
+  .activity-row > :not(.ar-dc):not(.ar-when):not(.ar-main):not(.ar-qty):not(.ar-value) { order: 6; }
+  .ar-item { white-space: normal; font-size: 15px; }
+  .ar-sub { white-space: normal; font-size: 12.5px; }
 }
