@@ -319,25 +319,48 @@
     const listEl = el.querySelector('#attn-list');
     if (!groups.length) { listEl.innerHTML = `<div class="empty-state">Nothing needs attention right now.</div>`; return; }
 
-    listEl.innerHTML = groups.map((g) => `
-      <div class="attn-group-head">
-        <span class="loc-pill ${g.locName === 'Fabrication' ? 'fab' : 'finished'}">${esc(g.locName)}</span>
-        <span class="cat">${esc(g.topName)}</span>
-        <span class="kind">${g.kind === 'consumable' ? 'Consumables' : 'Materials'}</span>
-        <span class="spacer"></span>
-        <span class="count">${g.rows.length} item${g.rows.length === 1 ? '' : 's'}</span>
-      </div>
-      ${g.rows.map((r) => `
-        <div class="attn-row">
-          <span class="status-dot${r.status === 'zero' ? ' bad' : ''}"></span>
-          <div><div class="name">${esc(r.name)}</div><div class="sub">${r.crumb ? esc(r.crumb) + ' · ' : ''}${r.status === 'zero' ? 'nothing on hand' : `${JKFmt.qty(r.qty)} ${esc(r.unit)} left`}</div></div>
-          <div class="spacer"></div>
-          <span class="${r.status === 'zero' ? 'status-pill-out' : 'status-pill-low'}">${r.status === 'zero' ? 'OUT' : 'LOW'}</span>
-          <span class="qty ${r.status === 'zero' ? 'bad' : 'normal'}">${r.status === 'zero' ? '0' : JKFmt.qty(r.qty)} ${esc(r.unit)}</span>
-          <span class="price">${r.price != null ? `${JKFmt.money(r.price)} / ${esc(r.unit)}` : '—'}</span>
+    // Groups are collapsed by default (there can be hundreds of never-stocked
+    // items); click a category to open it, or use Expand / Collapse all.
+    if (!state.attnOpen) state.attnOpen = new Set();
+    const gid = (g) => `${g.locId}:${g.topId}`;
+    function renderAttn() {
+      listEl.innerHTML = `
+        <div class="attn-toolbar"><button type="button" class="btn btn-sm" id="attn-toggle-all">${state.attnOpen.size ? 'Collapse all' : 'Expand all'}</button></div>
+      ` + groups.map((g) => {
+        const open = state.attnOpen.has(gid(g));
+        const nOut = g.rows.filter((r) => r.status === 'zero').length;
+        const nLow = g.rows.length - nOut;
+        return `
+        <div class="attn-group-head attn-toggle" data-gid="${esc(gid(g))}" role="button" tabindex="0" style="cursor:pointer;">
+          <span class="attn-chev">${open ? '&#9662;' : '&#9656;'}</span>
+          <span class="loc-pill ${g.locName === 'Fabrication' ? 'fab' : 'finished'}">${esc(g.locName)}</span>
+          <span class="cat">${esc(g.topName)}</span>
+          <span class="kind">${g.kind === 'consumable' ? 'Consumables' : 'Materials'}</span>
+          <span class="spacer"></span>
+          <span class="count">${nOut ? `${nOut} out` : ''}${nOut && nLow ? ' · ' : ''}${nLow ? `${nLow} low` : ''}</span>
         </div>
-      `).join('')}
-    `).join('');
+        ${open ? g.rows.map((r) => `
+          <div class="attn-row">
+            <span class="status-dot${r.status === 'zero' ? ' bad' : ''}"></span>
+            <div><div class="name">${esc(r.name)}</div><div class="sub">${r.crumb ? esc(r.crumb) + ' · ' : ''}${r.status === 'zero' ? 'nothing on hand' : `${JKFmt.qty(r.qty)} ${esc(r.unit)} left`}</div></div>
+            <div class="spacer"></div>
+            <span class="${r.status === 'zero' ? 'status-pill-out' : 'status-pill-low'}">${r.status === 'zero' ? 'OUT' : 'LOW'}</span>
+            <span class="qty ${r.status === 'zero' ? 'bad' : 'normal'}">${r.status === 'zero' ? '0' : JKFmt.qty(r.qty)} ${esc(r.unit)}</span>
+            <span class="price">${r.price != null ? `${JKFmt.money(r.price)} / ${esc(r.unit)}` : '—'}</span>
+          </div>
+        `).join('') : ''}`;
+      }).join('');
+      listEl.querySelectorAll('.attn-toggle').forEach((h) => {
+        const flip = () => { const k = h.dataset.gid; if (state.attnOpen.has(k)) state.attnOpen.delete(k); else state.attnOpen.add(k); renderAttn(); };
+        h.onclick = flip;
+        h.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } };
+      });
+      listEl.querySelector('#attn-toggle-all').onclick = () => {
+        if (state.attnOpen.size) state.attnOpen.clear(); else groups.forEach((g) => state.attnOpen.add(gid(g)));
+        renderAttn();
+      };
+    }
+    renderAttn();
   }
 
   // ---------------------------------------------------------------

@@ -1058,3 +1058,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
 .dcwiz-item-row .name-wrap .crumb{font-size:11.5px;color:var(--text-3,#888);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dcwiz-item-row.dcwiz-zero{opacity:.45;cursor:not-allowed}
 .dcwiz-item-row.dcwiz-active{outline:2px solid var(--accent);outline-offset:-2px;background:var(--surface-2,rgba(128,128,128,.12))}
+
+.attn-toolbar{padding:8px 20px;text-align:right}
+.attn-chev{display:inline-block;width:14px;color:var(--ink-4)}
+.attn-toggle:hover{background:var(--surface-3,rgba(128,128,128,.1))}

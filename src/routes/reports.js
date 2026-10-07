@@ -14,7 +14,7 @@ router.get('/out-of-stock', async (req, res, next) => {
     let itemsQuery = supabaseAdmin
       .schema('inventory')
       .from('items')
-      .select('id, name, unit, kind, location_id')
+      .select('id, parent_id, name, unit, kind, location_id')
       .eq('is_active', true);
 
     let locQuery = supabaseAdmin.schema('inventory').from('locations').select('id, name').eq('is_active', true);
@@ -33,20 +33,23 @@ router.get('/out-of-stock', async (req, res, next) => {
     if (locError) return res.status(400).json({ error: locError.message });
     if (stockError) return res.status(400).json({ error: stockError.message });
 
-    // A leaf is any item id that appears in `stock` at all (parents never
-    // do). Each item now belongs to exactly one location's tree, so we
-    // only ever check it against that one location — not every location.
-    const leafIds = new Set(stockRows.map((r) => r.item_id));
-    const stockByItem = new Map(stockRows.map((r) => [r.item_id, Number(r.qty)]));
+    // A leaf is an active item that no other active item has as its parent.
+    // (Not "has a stock row": an item that was created but never received
+    // has no stock row yet, and must still count as out of stock — it's the
+    // same rule the Home location cards use for "at zero".) Each item
+    // belongs to exactly one location's tree, so it's only checked against
+    // that one location.
+    const parentIds = new Set(items.map((i) => i.parent_id).filter(Boolean));
+    const stockByItem = new Map(stockRows.map((r) => [`${r.item_id}:${r.location_id}`, Number(r.qty)]));
     const locById = new Map(locations.map((l) => [l.id, l]));
 
     const out = [];
     for (const item of items) {
-      if (!leafIds.has(item.id)) continue;
+      if (parentIds.has(item.id)) continue; // has children -> not a leaf
       const loc = locById.get(item.location_id);
       if (!loc) continue; // filtered out by ?location= or inactive
-      const qty = stockByItem.get(item.id) ?? 0;
-      if (qty === 0) {
+      const qty = stockByItem.get(`${item.id}:${loc.id}`) ?? 0;
+      if (qty <= 0) {
         out.push({ item_id: item.id, item_name: item.name, unit: item.unit, kind: item.kind, location_id: loc.id, location_name: loc.name });
       }
     }
